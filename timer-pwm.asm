@@ -3,6 +3,12 @@ CLK           EQU 16600000
 TIMER0_RATE   EQU 1000
 TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 ;...
+$NOLIST                 
+$include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
+$include(math32.inc)
+$include(main.asm)
+$LIST
+;...
 dseg at 0x30                ;modify initial dseg position so no OVERLAP with other asm files
 cycle_counter:      ds 2
 desired_PWM:        ds 2    ;variable to hold the power percentage expressed as a whole number
