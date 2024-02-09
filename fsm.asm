@@ -21,6 +21,8 @@ CLK           EQU 16600000 ; Microcontroller system frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
+START_BUTTON equ P1.7
+
 dseg at 0x30
 Count1ms:     ds 2 ; Used to determine when half second has passed
 BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
@@ -38,17 +40,18 @@ timer_state: 		ds 1 ; is state in a timer state?
 cseg
 ; These 'equ' must match the hardware wiring
 LCD_RS equ P1.3
-;LCD_RW equ PX.X ; Not used in this code, connect the pin to GND
 LCD_E  equ P1.4
 LCD_D4 equ P0.0
 LCD_D5 equ P0.1
 LCD_D6 equ P0.2
 LCD_D7 equ P0.3
 
+
+
+
+
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
-$include(math32.inc)
-$include(main.asm)
 $LIST
 
 Timer2_Init:
@@ -108,35 +111,38 @@ Inc_Done:
 	cjne a, #0x01, OtherStates ; if STATE_NUM is NOT 1, jump
 	; CHECK if temperature is LESS than 50
 	mov STATE_NUM, #0x00
-	ljmp Timer2_ISR_done
-OtherStates:
-	inc STATE_NUM 	; increment state
-Timer2_ISR_done:
 	mov BCD_counter, #0x00
 	clr TR2
+	ljmp Timer2_ISR_done
+OtherStates:
+	mov BCD_counter, #0x00
+	clr TR2
+	inc STATE_NUM 	; increment state
+Timer2_ISR_done:
 
 
 	pop psw
 	pop acc
 	reti
 
-
+LCD:
+	Set_Cursor(2,5)
+	Display_BCD(Resulting_Counter)
+    Set_Cursor(2,1)
+    Display_BCD(BCD_counter)
+    Set_Cursor(1,1)
+    Display_BCD(STATE_NUM)
+    ret
 
 	; PROBLEM, 1ms uses TIMER 0
-wait_1ms:
-	clr	TR0 ; Stop timer 0
-	clr	TF0 ; Clear overflow flag
-	mov	TH0, #high(TIMER0_RELOAD_1MS)
-	mov	TL0,#low(TIMER0_RELOAD_1MS)
-	setb TR0
-	jnb	TF0, $ ; Wait for overflow
-	ret
-
-; Wait the number of miliseconds in R2
-waitms:
-	lcall wait_1ms
-	djnz R2, waitms
-	ret
+Wait50milliSec:
+    mov R2, #10
+W3: mov R1, #200
+W2: mov R0, #104
+W1: djnz R0, W1 ; 4 cycles->4*60.285ns*104=25us
+    djnz R1, W2 ; 25us*200=5.0ms
+    djnz R2, W3 ; 5.0ms*10=50ms (approximately)
+    ret
 
 StateChanges: ; checks what will be the counter number for each state
 	mov a, STATE_NUM
@@ -180,25 +186,29 @@ done_state_counter:
 
 
 state0:
+	mov desired_PWM, #0x00 ; 0% duty cycle
 	jb START_BUTTON, quit0 ; if START BUTTON is NOT PRESSED
-	mov r2, #50
-	lcall waitms
+	lcall Wait50milliSec
 	jb START_BUTTON, quit0
 
 	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-	mov a, #0x60
+	mov a, #0x05
 	mov Resulting_Counter, a
 	inc STATE_NUM
 	setb TR2
 quit0:
 	ret
 state1:
-	
+	mov desired_PWM, #0x64 ;100% duty cycle
+	jb START_BUTTON, quit1 ; if START BUTTON is NOT PRESSED
+	lcall Wait50milliSec
+	jb START_BUTTON, quit1
+
+	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
 	; IF TEMPERATURE is 150, 
 
-	mov a, #0x90
+	mov a, #0x06
 	mov Resulting_Counter, a
-	ret
 	inc STATE_NUM
 	setb TR2
 
@@ -206,33 +216,71 @@ quit1:
 	ret 
 	
 state2:
-	
+    jb START_BUTTON, quit2 ; if START BUTTON is NOT PRESSED
+	lcall Wait50milliSec
+	jb START_BUTTON, quit2
+
+	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+quit2:
+	ret
 
 state3:
+    jb START_BUTTON, quit3 ; if START BUTTON is NOT PRESSED
+	lcall Wait50milliSec
+	jb START_BUTTON, quit3
+
+	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
 	; IF TEMPERATURE REACHES RIGHT VALUE
-	mov a, #0x60
+	mov a, #0x07
 	mov Resulting_Counter, a
 	inc STATE_NUM
 	setb TR2
+quit3:
 	ret
-state4:
 
+state4:
+    jb START_BUTTON, quit4 ; if START BUTTON is NOT PRESSED
+	lcall Wait50milliSec
+	jb START_BUTTON, quit4
+
+	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+quit4:
 	ret
 state5:
+    jb START_BUTTON, quit5 ; if START BUTTON is NOT PRESSED
+	lcall Wait50milliSec
+	jb START_BUTTON, quit5
+
+	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
 	; CHECK IF TEMPERATURE REACHES VERY LOW VALUE
 	mov STATE_NUM, #0x00
+quit5:
 	ret
 
 FSM_main:
+    mov SP, #0x7F
+    
+    mov P0M1, #0x00
+    mov P0M2, #0x00
+    mov P1M1, #0x00
+    mov P1M2, #0x00
+    mov P3M2, #0x00
+    mov P3M2, #0x00
+    
+    lcall LCD_4BIT
+    
 	mov BCD_counter, #0x00
 	mov STATE_NUM, #0x00
-	mov Current_Counter, #0x00
 	mov Resulting_Counter, #0x00
 	lcall Timer2_Init
     setb EA   ; Enable Global interrupts
 FSM_forever:
-	lcall StateChanges
 
+	lcall LCD
+	lcall StateChanges
+	
+	
+    
 
 	ljmp FSM_forever
 
