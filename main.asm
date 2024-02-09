@@ -80,11 +80,10 @@ LCD_D5 equ P0.1
 LCD_D6 equ P0.2
 LCD_D7 equ P0.3
 
-$NOLIST
-$include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
-$include(math32.inc)
-$include(main.asm)
-$LIST
+;$NOLIST
+;$include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
+;$include(math32.inc)
+;$LIST
 
 main:
 	; Initialization

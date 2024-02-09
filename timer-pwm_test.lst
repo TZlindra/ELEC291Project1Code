@@ -1,0 +1,110 @@
+                  2   $LIST
+0000              4   
+0000              5   org 0x0000
+0000 02003F       6       ljmp main
+0003              7   
+0003              8   ; External interrupt 0 vector (not used in this code)
+0003              9   org 0x0003
+0003 32          10            reti
+0004             11   
+0004             12   ; Timer/Counter 0 overflow interrupt vector
+000B             13   org 0x000B
+000B 020024      14            ljmp Timer0_ISR
+000E             15   
+000E             16   
+000E             17   
+000E             18   
+000E             19   
+000E             20   CLK           EQU 16600000
+000E             21   TIMER0_RATE   EQU 50   ;0.5 ms
+000E             22   TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
+000E             23   
+000E             24   
+000E             25   
+000E             26   OUTPUT_PIN  equ P1.5
+000E             27   input_button equ P1.6
+000E             28   
+000E             29   
+000E             30   
+0030             31   dseg at 0x30                ;modify initial dseg position so no OVERLAP with other asm files
+0030             32   cycle_counter:     ds 2
+0032             33   desired_PWM:        ds 2 
+0034             34   
+0000             35   bseg
+0000             36   power_flag: dbit 1
+0001             37   
+000E             38   cseg
+000E             39   ; These 'equ' must match the hardware wiring
+000E             40   LCD_RS equ P1.3
+000E             41   ;LCD_RW equ PX.X ; Not used in this code, connect the pin to GND
+000E             42   LCD_E  equ P1.4
+000E             43   LCD_D4 equ P0.0
+000E             44   LCD_D5 equ P0.1
+000E             45   LCD_D6 equ P0.2
+000E             46   LCD_D7 equ P0.3
+000E             47   
+000E             48   
+000E             49   
+000E             50   
+000E             51   
+000E             52   
+000E             53   Timer0_Init:
+000E 438E08      54            orl CKCON, #0b00001000 ; Input for timer 0 is sysclk/1
+0011 E589        55            mov a, TMOD
+0013 54F0        56            anl a, #0xf0 ; 11110000 Clear the bits for timer 0
+0015 4401        57            orl a, #0x01 ; 00000001 Configure timer 0 as 16-timer
+0017 F589        58            mov TMOD, a
+0019 758CF0      59            mov TH0, #high(TIMER0_RELOAD)
+001C 758A20      60            mov TL0, #low(TIMER0_RELOAD)
+001F             61            ; Enable the timer and interrupts
+001F D2A9        62       setb ET0  ; Enable timer 0 interrupt
+0021 D28C        63            setb TR0   ;NOTE: commented out bcuz want manual start, not auto start
+0023 22          64       ret
+0024             65   
+0024             66   Timer0_ISR: ;runs ISR every 0.5ms (0->100)
+0024 C28C        67       clr TR0
+0026 758CF0      68            mov TH0, #high(TIMER0_RELOAD)   ;NOTE: to be changed to achieve 1ms
+0029 758A20      69            mov TL0, #low(TIMER0_RELOAD)    ;NOTE: to be changed to achieve 1ms
+002C D28C        70       setb TR0
+002E             71            
+002E             72       
+002E E530        73            mov a, cycle_counter
+0030 B53202      74       cjne a, desired_PWM, return0
+0033 B295        75       cpl OUTPUT_PIN  ;NOTE: unsure if swap power flag needed
+0035             76   
+0035             77   return0:
+0035 E530        78            mov a, cycle_counter
+0037 120063      79       lcall reset_count
+003A 2401        80       add a, #0x01
+003C F530        81       mov cycle_counter, a
+003E 32          82            reti
+003F             83   
+003F             84   main:
+003F 75817F      85       mov SP, #0x7F
+0042 75B100      86       mov P0M1, #0x00
+0045 75B200      87       mov P0M2, #0x00
+0048 75B300      88       mov P1M1, #0x00
+004B 75B400      89       mov P1M2, #0x00
+004E 75AD00      90       mov P3M2, #0x00
+0051 75AD00      91       mov P3M2, #0x00
+0054             92   
+0054 12000E      93       lcall Timer0_Init
+0057 D2AF        94       setb EA
+0059             95   
+0059             96       ;initial values, STARTING AT state0
+0059 753000      97       mov cycle_counter, #0x00    ;set cycle counter to 0
+005C 753228      98       mov desired_PWM, #0x28      ;set desired PWM percent to 20%
+005F D295        99       setb OUTPUT_PIN             ;
+0061            100   
+0061            101   loop:
+0061 80FE       102       sjmp loop
+0063            103   
+0063            104   reset_count:
+0063 E530       105       mov a, cycle_counter
+0065 B42806     106       cjne a, #0x28, back ;if 10ms/100 cycles have passed, reset the duty cycle
+0068 7400       107       mov a, #0x00
+006A F530       108       mov cycle_counter, a
+006C B295       109       cpl OUTPUT_PIN
+006E            110   back:
+006E 22         111       ret
+006F            112   
