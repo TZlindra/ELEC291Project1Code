@@ -27,16 +27,23 @@ $LIST
 ; Clock Frequencies ;
 ;-------------------;
 
-CLK           EQU 16600000 ; Microcontroller System Frequency in Hz
+CLK               EQU 16600000 ; Microcontroller System Frequency in Hz
 BAUD              EQU 115200 ; Baud Rate for UART in BPS
 
 TIMER1_RELOAD     EQU (0X100 - (CLK / (16 * BAUD)))
-TIMER0_RELOAD_1MS EQU (0X10000 - (CLK / 1000))
+
+;------------------------;
+;   Temperature Values   ;
+;------------------------;
+TEMP_ERROR EQU 50
+TEMP_SOAK  EQU 150
+TEMP_REFLOW EQU 217
 
 ORG 0x0000
 	LJMP Main
 
-TX_MSG:           db 'TX(C)           ', 0
+ABOVE:            db 'ABOVE', 0
+BELOW:            db 'BELOW', 0
 
 CSEG
 
@@ -64,6 +71,9 @@ OVEN_TEMP: DS 1
 
 BSEG
 MF: DBIT 1
+
+Below_Temp_Flag: DBIT 1
+Error_Triggered_Flag: DBIT 1
 
 $NOLIST
 $include(LCD_4bit.inc) ; Library of LCD Related Functions and Utility Macros
@@ -101,12 +111,6 @@ Init_Timer1:
 	ORL	TMOD, #0X20 ; Timer 1 Mode 2
 	MOV	TH1, #TIMER1_RELOAD ; TH1 = TIMER1_RELOAD;
 	SETB TR1
-Init_Timer0:
-    ; Init Timer 0 for Delay Functions
-	CLR	TR0 ; Stop Timer 0
-	ORL	CKCON, #0X08 ; CLK is Input for Timer 0.
-	ANL	TMOD, #0XF0 ; Clear Configuration Bits for Timer 0
-	ORL	TMOD, #0X01 ; Timer 0 in Mode 1 : 16-bit Timer
 Init_ADC:
 	; Initialize the pins used by the ADC (P1.1, P1.7, P3.0) as Analog Inputs
 	ORL	P1M1, #0B1000_0010
@@ -114,34 +118,12 @@ Init_ADC:
 	ORL	P3M1, #0B0000_0010
 	ANL P3M2, #0B1111_1101
 
-	;ToDo : Figure Out if We Need Interrupt for Channel 0
-	; ; Initialize and Start the ADC.
-	; ANL ADCCON0, #0XF0 ; Clear the ADC Configuration Bits
-	; ORL ADCCON0, #0X00 ; Select Channel 0
-	; ORL ADCCON0, #0X01 ; Select Channel 1
-	; ORL ADCCON0, #0X07 ; Select Channel 7
-
 	; AINDIDS Select if Some Pins are Analog Inputs or Digital I/O
 	MOV AINDIDS, #0X00 ; Disable All Analog Inputs
 	ORL AINDIDS, #0B1000_0011 ; Activate AIN0, AIN1, AIN7
 
 	ORL ADCCON1, #0X01 ; Enable ADC
 
-	RET
-
-Wait_1ms:
-	CLR	TR0 ; Stop Timer 0
-	CLR	TF0 ; Clear Overflow Flag
-	MOV	TH0, #HIGH(TIMER0_RELOAD_1MS)
-	MOV	TL0,#LOW(TIMER0_RELOAD_1MS)
-	SETB TR0
-	JNB	TF0, $ ; Wait for Timer 0 Overflow
-	RET
-
-; Wait Number of ms in R2
-Wait_ms:
-	LCALL Wait_1ms
-	DJNZ R2, Wait_ms
 	RET
 
 CARRIAGE_RETURN:
@@ -174,9 +156,6 @@ Main:
 	MOV SP, #0X7F
 	LCALL Init_All
     LCALL LCD_4BIT
-Init_LCD:
-	Set_Cursor(2, 1)
-    Send_Constant_String(#TX_MSG)
 Forever:
 	SJMP Read_ADC_LED
 Read_ADC_LED:
@@ -194,7 +173,7 @@ Read_ADC_LED:
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X00 ; Select ADC Channel 0
     ; Read the ADC Connected to AIN7 on Pin 14
-	LCALL Read_ADC_Start
+	LCALL Read_ADC_Avg
 	; Save Result to Use Later.
 	MOV VLED_ADC+0, R0
 	MOV VLED_ADC+1, R1
@@ -202,10 +181,8 @@ Get_Temp_LM335:
 	; Read AIN1 on Pin 14
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X01 ; Select ADC Channel 1
-
-	LCALL Read_ADC_Start
+	LCALL Read_ADC_Avg
 	LCALL Convert_Voltage_Temp
-	LCALL Calculate_Temp
 
 	; Save Result to Use Later.
 	MOV LM335_TEMP+0, X+0
@@ -217,9 +194,8 @@ Get_Temp_Thermocouple:
 	; Read AIN7 on Pin 14
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X07 ; Select ADC Channel 7
-	LCALL Read_ADC_Start
+	LCALL Read_ADC_Avg
 	LCALL Convert_Voltage_Temp
-    LCALL Calculate_Temp
 
 	; Save Result to Use Later.
 	MOV THERMOCOUPLE_TEMP+0, X+0
@@ -227,8 +203,8 @@ Get_Temp_Thermocouple:
 
 	LCALL hex2BCD
 	LCALL Display_Thermocouple_BCD
-Convert_Temp_Oven:
-	LCALL Add_Temp
+Get_Temp_Oven:
+	LCALL Add_Temp_Oven
 
 	MOV X+3, #0
 	MOV X+2, #0
@@ -240,17 +216,6 @@ Convert_Temp_Oven:
 	LCALL Display_Oven_Temperature
 
 	; Convert to BCD and Display
-
-Wait_1000:
-	; Wait 1000 ms Between Conversions
-	MOV R2, #250
-	LCALL Wait_ms
-	MOV R2, #250
-	LCALL Wait_ms
-	MOV R2, #250
-	LCALL Wait_ms
-	MOV R2, #250
-	LCALL Wait_ms
 
 	LJMP Forever
 
@@ -276,7 +241,7 @@ Convert_Voltage_Temp:
 
     RET
 
-Add_Temp:
+Add_Temp_Oven:
 	MOV X+0, LM335_TEMP+0
 	MOV X+1, LM335_TEMP+1
 	MOV X+2, #0 ; Pad Other Bits with 0
@@ -288,6 +253,7 @@ Add_Temp:
 	MOV Y+3, #0 ; Pad Other Bits with 0
 
 	LCALL add32
+
 	Load_y(100)
 	LCALL div32
 
@@ -323,5 +289,108 @@ Display_Thermocouple_BCD:
 Display_Oven_Temperature:
 	Set_Cursor(1, 1)
 	Display_BCD(BCD+0)
+
+	LCALL Check_Temp_Error
+	JB Below_Temp_Flag, Display_Oven_Temperature_Below
+Display_Oven_Temperature_Above:
+	Send_Constant_String(#ABOVE)
 	RET
+Display_Oven_Temperature_Below:
+	Send_Constant_String(#BELOW)
+	RET
+
+Check_Temp_Error:
+	; Check if the Temperature is Below the Error Threshold
+	; If it is, Set the Error_Triggered_Flag Flag
+	; Otherwise, Clear the Error_Triggered_Flag Flag
+
+	MOV A, R1
+	PUSH ACC
+
+	MOV R1, #TEMP_ERROR
+	LCALL Check_Temp_Oven
+	JB Below_Temp_Flag, Check_Temp_Error_Triggered
+	SJMP Check_Temp_Error_Triggered_Done
+Check_Temp_Error_Triggered:
+	CLR Below_Temp_Flag
+	SETB Error_Triggered_Flag
+	SJMP Check_Temp_Error_Triggered_Done
+Check_Temp_Error_Triggered_Done:
+	POP ACC
+	MOV R1, A
+
+	RET
+
+Check_Temp_Soak:
+	; Check if the Temperature is Above the Soak Threshold
+	; If it is, Clear the Below_Temp_Flag
+	; Otherwise, Set the Below_Temp_Flag
+
+	MOV A, R1
+	PUSH ACC
+
+	MOV R1, #TEMP_SOAK
+	LCALL Check_Temp_Oven
+
+	POP ACC
+	MOV R1, A
+
+	RET
+
+Check_Temp_Reflow:
+	; Check if the Temperature is Above the Reflow Threshold
+	; If it is, Clear the Below_Temp_Flag
+	; Otherwise, Set the Below_Temp_Flag
+
+	MOV A, R1
+	PUSH ACC
+
+	MOV R1, #TEMP_REFLOW
+	LCALL Check_Temp_Oven
+
+	POP ACC
+	MOV R1, A
+
+	RET
+
+Check_Temp_Oven:
+	MOV A, OVEN_TEMP
+	SUBB A, R1
+	JC Temp_Below_Threshold
+Temp_NotBelow_Threshold:
+	CLR Below_Temp_Flag
+	SJMP Check_Temp_Oven_Done
+Temp_Below_Threshold:
+	SETB Below_Temp_Flag
+Check_Temp_Oven_Done:
+	RET
+
+Read_ADC_Avg:
+	; Get the Average of 5000 ADC Readings
+	; Store the Result in [R1, R0]
+	; R1 = High Byte
+	; R0 = Low Byte
+
+	Load_x(0)
+	MOV R4, #100
+Get_ADC_Sum_Loop_I:
+	MOV R5, #50
+Get_ADC_Sum_Loop_J:
+	LCALL Read_ADC_Start
+
+	MOV Y+3, #0
+	MOV Y+2, #0
+	MOV Y+1, R1 ; High Byte
+	MOV Y+0, R0 ; Low Byte
+	LCALL add32
+	DJNZ R5, Get_ADC_Sum_Loop_J
+	DJNZ R4, Get_ADC_Sum_Loop_I
+Read_ADC_Avg_Done:
+	load_y(5000)
+	LCALL div32
+
+	MOV R0, X+0
+	MOV R1, X+1
+	RET
+
 END
