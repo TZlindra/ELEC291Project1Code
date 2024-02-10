@@ -15,316 +15,380 @@
 0000             17   ;                               -------
 0000             18   ;
 0000             19   
-0000             20   
-0000             21   CLK           EQU 16600000 ; Microcontroller system frequency in Hz
-0000             22   TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
-0000             23   TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
-0000             24   
-0000             25   START_BUTTON     equ P1.7
+0000             20   CLK           EQU 16600000 ; Microcontroller system frequency in Hz
+0000             21   TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
+0000             22   TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
+0000             23   
+0000             24   START_BUTTON equ P1.7
+0000             25   OUTPUT_PIN        equ P1.5
 0000             26   
-0000             27   org 0x0000
-0000 02022D      28       ljmp FSM_main
-0003             29   
-0003             30   ; External interrupt 0 vector (not used in this code)
-0003             31   org 0x0003
-0003 32          32            reti
-0004             33   
-0004             34   ; Timer/Counter 0 overflow interrupt vector
-000B             35   org 0x000B
-000B 32          36            reti
-000C             37   
-000C             38   ; External interrupt 1 vector (not used in this code)
-0013             39   org 0x0013
-0013 32          40            reti
-0014             41   
-0014             42   ; Timer/Counter 1 overflow interrupt vector (not used in this code)
-001B             43   org 0x001B
-001B 32          44            reti
-001C             45   
-001C             46   ; Serial port receive/transmit interrupt vector (not used in this code)
-0023             47   org 0x0023 
-0023 32          48            reti
-0024             49            
-0024             50   ; Timer/Counter 2 overflow interrupt vector
-002B             51   org 0x002B
-002B 0200FF      52            ljmp Timer2_ISR
-002E             53   
-0030             54   dseg at 0x30
-0030             55   Count1ms:     ds 2 ; Used to determine when half second has passed
-0032             56   BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
-0033             57   STATE_NUM:         ds 1 ;
-0034             58   Resulting_Counter:         ds 1 ;
-0035             59   
-0035             60   ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
-0035             61   ; instructions with these variables.  This is how you define a 1-bit variable:
-0000             62   bseg
-0000             63   timer_state:             dbit 1 ; is state in a timer state?
-0001             64   
-0001             65   
-0001             66   
-002E             67   cseg
-002E             68   ; These 'equ' must match the hardware wiring
-002E             69   LCD_RS equ P1.3
-002E             70   ;LCD_RW equ PX.X ; Not used in this code, connect the pin to GND
-002E             71   LCD_E  equ P1.4
-002E             72   LCD_D4 equ P0.0
-002E             73   LCD_D5 equ P0.1
-002E             74   LCD_D6 equ P0.2
-002E             75   LCD_D7 equ P0.3
-002E             76   
-002E             77   
-002E             78   
-                 80   	$LIST
-00E2             82   
-00E2             83   Timer2_Init:
-00E2 75C800      84            mov T2CON, #0 ; Stop timer/counter.  Autoreload mode.
-00E5 75CDBF      85            mov TH2, #high(TIMER2_RELOAD)
-00E8 75CC28      86            mov TL2, #low(TIMER2_RELOAD)
-00EB             87            ; Set the reload value
-00EB 43C980      88            orl T2MOD, #0x80 ; Enable timer 2 autoreload
-00EE 75CBBF      89            mov RCMP2H, #high(TIMER2_RELOAD)
-00F1 75CA28      90            mov RCMP2L, #low(TIMER2_RELOAD)
-00F4             91            ; Init One millisecond interrupt counter.  It is a 16-bit variable made with two 8-bit parts
-00F4 E4          92            clr a
-00F5 F530        93            mov Count1ms+0, a
-00F7 F531        94            mov Count1ms+1, a
-00F9             95            ; Enable the timer and interrupts
-00F9 439B80      96            orl EIE, #0x80 ; Enable timer 2 interrupt ET2=1
-00FC C2CA        97       clr TR2  ; TIMER 2 DISABLED
-00FE 22          98            ret
-00FF             99   
-00FF            100   
-00FF            101   ;---------------------------------;
-00FF            102   ; ISR for timer 2                 ;
-00FF            103   ;---------------------------------;
-00FF            104   Timer2_ISR:
-00FF C2CF       105            clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in the ISR.  It is bit addressable.
-0101            106            
-0101            107            ; The two registers used in the ISR must be saved in the stack
-0101 C0E0       108            push acc
-0103 C0D0       109            push psw
-0105            110            
-0105            111            ; Increment the 16-bit one mili second counter
-0105 0530       112            inc Count1ms+0    ; Increment the low 8-bits first
-0107 E530       113            mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
-0109 7002       114            jnz Inc_Done
-010B 0531       115            inc Count1ms+1
-010D            116   
-010D            117   Inc_Done:
-010D            118            ; Check if half second has passed
-010D E530       119            mov a, Count1ms+0
-010F B4E82B     120            cjne a, #low(1000), Timer2_ISR_done 
-0112 E531       121            mov a, Count1ms+1
-0114 B40326     122            cjne a, #high(1000), Timer2_ISR_done
-0117            123            
-0117            124   
-0117 E4         125            clr a
-0118 F530       126            mov Count1ms+0, a
-011A F531       127            mov Count1ms+1, a
-011C            128            ; Increment the BCD counter
-011C E532       129            mov a, BCD_counter
-011E 2401       130            add a, #0x01
-0120 D4         131            da a
-0121 F532       132            mov BCD_counter, a
-0123 B53417     133            cjne a, Resulting_Counter, Timer2_ISR_done ; IF Resulting_counter is not BCD_counter, then skip
-0126            134   
-0126            135            ; IF STATE 1, then check 
-0126 E533       136            mov a, STATE_NUM
-0128 B4010B     137            cjne a, #0x01, OtherStates ; if STATE_NUM is NOT 1, jump
-012B            138            ; CHECK if temperature is LESS than 50
-012B 753300     139            mov STATE_NUM, #0x00
-012E 753200     140            mov BCD_counter, #0x00
-0131 C2CA       141            clr TR2
-0133 02013D     142            ljmp Timer2_ISR_done
-0136            143   OtherStates:
-0136 753200     144            mov BCD_counter, #0x00
-0139 C2CA       145            clr TR2
-013B 0533       146            inc STATE_NUM   ; increment state
-013D            147   Timer2_ISR_done:
-013D            148   
-013D            149   
-013D D0D0       150            pop psw
-013F D0E0       151            pop acc
-0141 32         152            reti
-0142            153   
-0142            154   LCD:
-0142 C0E0       155            push acc
-0144 7405       155            mov a, #5
-0146 14         155            dec a
-0147 1200C5     155            lcall ?Set_Cursor_2 ; Select column and row
-014A D0E0       155            pop acc
-014C C000       156            push ar0
-014E A834       156            mov r0, Resulting_Counter
-0150 1200CC     156            lcall ?Display_BCD
-0153 D000       156            pop ar0
-0155 C0E0       157            push acc
-0157 7401       157            mov a, #1
-0159 14         157            dec a
-015A 1200C5     157            lcall ?Set_Cursor_2 ; Select column and row
-015D D0E0       157            pop acc
-015F C000       158            push ar0
-0161 A832       158            mov r0, BCD_counter
-0163 1200CC     158            lcall ?Display_BCD
-0166 D000       158            pop ar0
-0168 C0E0       159            push acc
-016A 7401       159            mov a, #1
-016C 14         159            dec a
-016D 1200C7     159            lcall ?Set_Cursor_1 ; Select column and row
-0170 D0E0       159            pop acc
-0172 C000       160            push ar0
-0174 A833       160            mov r0, STATE_NUM
-0176 1200CC     160            lcall ?Display_BCD
-0179 D000       160            pop ar0
-017B 22         161       ret
-017C            162   
-017C            163            ; PROBLEM, 1ms uses TIMER 0
-017C            164   Wait50milliSec:
-017C 7A0A       165       mov R2, #10
-017E 79C8       166   W3: mov R1, #200
-0180 7868       167   W2: mov R0, #104
-0182 D8FE       168   W1: djnz R0, W1 ; 4 cycles->4*60.285ns*104=25us
-0184 D9FA       169       djnz R1, W2 ; 25us*200=5.0ms
-0186 DAF6       170       djnz R2, W3 ; 5.0ms*10=50ms (approximately)
-0188 22         171       ret
-0189            172   
-0189            173   StateChanges: ; checks what will be the counter number for each state
-0189 E533       174            mov a, STATE_NUM
-018B B40006     175            cjne a, #0x00, next1 ; if STATE_NUM is NOT 0, jump to next1
-018E            176            
-018E 1201C4     177            lcall state0
-0191 0201C3     178            ljmp done_state_counter
-0194            179   next1:
-0194 E533       180            mov a, STATE_NUM
-0196 B40106     181            cjne a, #0x01, next2 ; if STATE_NUM is NOT 1, jump to next2
-0199            182   
-0199 1201D9     183            lcall state1
-019C 0201C3     184            ljmp done_state_counter
-019F            185   next2:
-019F E533       186            mov a, STATE_NUM
-01A1 B40206     187            cjne a, #0x02, next3 ; if STATE_NUM is NOT 2, jump to next3
-01A4            188            
-01A4 1201EE     189            lcall state2
-01A7 0201C3     190            ljmp done_state_counter
-01AA            191   next3:
-01AA E533       192            mov a, STATE_NUM
-01AC B40306     193            cjne a, #0x03, next4 ; if STATE_NUM is NOT 3, jump to next4
-01AF            194   
-01AF 1201FB     195            lcall state3
-01B2 0201C3     196            ljmp done_state_counter
-01B5            197   next4:
-01B5 E533       198            mov a, STATE_NUM
-01B7 B40406     199            cjne a, #0x04, next5 ; if STATE_NUM is NOT 4, jump to next5
-01BA            200   
-01BA 120210     201            lcall state4
-01BD 0201C3     202            ljmp done_state_counter
-01C0            203   next5:
-01C0 12021D     204            lcall state5
-01C3            205            ; STATE 5
-01C3            206            
-01C3            207   done_state_counter:
-01C3 22         208            ret
-01C4            209   
-01C4            210   
-01C4            211   
-01C4            212   
-01C4            213   
-01C4            214   state0:
-01C4 209711     215            jb START_BUTTON, quit0 ; if START BUTTON is NOT PRESSED
-01C7 12017C     216            lcall Wait50milliSec
-01CA 20970B     217            jb START_BUTTON, quit0
-01CD            218   
-01CD 3097FD     219            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-01D0 7405       220            mov a, #0x05
-01D2 F534       221            mov Resulting_Counter, a
-01D4 0533       222            inc STATE_NUM
-01D6 D2CA       223            setb TR2
-01D8            224   quit0:
-01D8 22         225            ret
-01D9            226   state1:
-01D9 209711     227            jb START_BUTTON, quit1 ; if START BUTTON is NOT PRESSED
-01DC 12017C     228            lcall Wait50milliSec
-01DF 20970B     229            jb START_BUTTON, quit1
-01E2            230   
-01E2 3097FD     231            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-01E5            232            ; IF TEMPERATURE is 150, 
-01E5            233   
-01E5 7406       234            mov a, #0x06
-01E7 F534       235            mov Resulting_Counter, a
-01E9 0533       236            inc STATE_NUM
-01EB D2CA       237            setb TR2
-01ED            238   
-01ED            239   quit1:
-01ED 22         240            ret 
-01EE            241            
-01EE            242   state2:
-01EE 209709     243       jb START_BUTTON, quit2 ; if START BUTTON is NOT PRESSED
-01F1 12017C     244            lcall Wait50milliSec
-01F4 209703     245            jb START_BUTTON, quit2
-01F7            246   
-01F7 3097FD     247            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-01FA            248   quit2:
-01FA 22         249            ret
-01FB            250   
-01FB            251   state3:
-01FB 209711     252       jb START_BUTTON, quit3 ; if START BUTTON is NOT PRESSED
-01FE 12017C     253            lcall Wait50milliSec
-0201 20970B     254            jb START_BUTTON, quit3
-0204            255   
-0204 3097FD     256            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-0207            257            ; IF TEMPERATURE REACHES RIGHT VALUE
-0207 7407       258            mov a, #0x07
-0209 F534       259            mov Resulting_Counter, a
-020B 0533       260            inc STATE_NUM
-020D D2CA       261            setb TR2
-020F            262   quit3:
-020F 22         263            ret
-0210            264   
-0210            265   state4:
-0210 209709     266       jb START_BUTTON, quit4 ; if START BUTTON is NOT PRESSED
-0213 12017C     267            lcall Wait50milliSec
-0216 209703     268            jb START_BUTTON, quit4
-0219            269   
-0219 3097FD     270            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-021C            271   quit4:
-021C 22         272            ret
-021D            273   state5:
-021D 20970C     274       jb START_BUTTON, quit5 ; if START BUTTON is NOT PRESSED
-0220 12017C     275            lcall Wait50milliSec
-0223 209706     276            jb START_BUTTON, quit5
-0226            277   
-0226 3097FD     278            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-0229            279            ; CHECK IF TEMPERATURE REACHES VERY LOW VALUE
-0229 753300     280            mov STATE_NUM, #0x00
-022C            281   quit5:
-022C 22         282            ret
-022D            283   
-022D            284   FSM_main:
-022D 75817F     285       mov SP, #0x7F
-0230            286       
-0230 75B100     287       mov P0M1, #0x00
-0233 75B200     288       mov P0M2, #0x00
-0236 75B300     289       mov P1M1, #0x00
-0239 75B400     290       mov P1M2, #0x00
-023C 75AD00     291       mov P3M2, #0x00
-023F 75AD00     292       mov P3M2, #0x00
-0242            293       
-0242 120087     294       lcall LCD_4BIT
-0245            295       
-0245 753200     296            mov BCD_counter, #0x00
-0248 753300     297            mov STATE_NUM, #0x00
-024B 753400     298            mov Resulting_Counter, #0x00
-024E 1200E2     299            lcall Timer2_Init
-0251 D2AF       300       setb EA   ; Enable Global interrupts
-0253            301   FSM_forever:
-0253            302   
-0253 120142     303            lcall LCD
-0256 120189     304            lcall StateChanges
-0259            305            
-0259            306            
-0259            307       
-0259            308   
-0259 020253     309            ljmp FSM_forever
-025C            310   
-025C            311   
-025C            312   ; 
-025C            313   END
+0000             27   ; Reset vector
+0000             28   org 0x0000
+0000 020292      29       ljmp FSM_main
+0003             30   
+0003             31   ; External interrupt 0 vector (not used in this code)
+0003             32   org 0x0003
+0003 32          33            reti
+0004             34   
+0004             35   ; Timer/Counter 0 overflow interrupt vector
+000B             36   org 0x000B
+000B 32          37            reti
+000C             38   
+000C             39   ; External interrupt 1 vector (not used in this code)
+0013             40   org 0x0013
+0013 32          41            reti
+0014             42   
+0014             43   ; Timer/Counter 1 overflow interrupt vector (not used in this code)
+001B             44   org 0x001B
+001B 32          45            reti
+001C             46   
+001C             47   ; Serial port receive/transmit interrupt vector (not used in this code)
+0023             48   org 0x0023 
+0023 32          49            reti
+0024             50            
+0024             51   ; Timer/Counter 2 overflow interrupt vector
+002B             52   org 0x002B
+002B 020129      53            ljmp Timer2_ISR
+002E             54   
+0030             55   dseg at 0x30
+0030             56   Count1ms:     ds 2 ; Used to determine when half second has passed
+0032             57   BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
+0033             58   STATE_NUM:         ds 1 ;
+0034             59   Current_Counter:           ds 1 ; 
+0035             60   Resulting_Counter:         ds 1 ;
+0036             61   timer_state:          ds 1 ;
+0037             62   beep_count:                        ds 1 ;
+0038             63   desired_PWM:               ds 2 ;
+003A             64   
+003A             65   
+003A             66   ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
+003A             67   ; instructions with these variables.  This is how you define a 1-bit variable:
+0000             68   bseg
+0000             69   ;Alarm_En_Flag:  dbit 1
+0000             70   ;timer_state:            dbit 1 ; is state in a timer state?
+0000             71   
+002E             72   cseg
+002E             73   ; These 'equ' must match the hardware wiring
+002E             74   LCD_RS equ P1.3
+002E             75   LCD_E  equ P1.4
+002E             76   LCD_D4 equ P0.0
+002E             77   LCD_D5 equ P0.1
+002E             78   LCD_D6 equ P0.2
+002E             79   LCD_D7 equ P0.3
+002E             80   
+002E             81   
+                 84   $LIST
+00E2             86   
+00E2             87   pwm_main: ; called in main
+00E2             88       ;initial values, STARTING AT state0
+00E2 753800      89       mov desired_PWM, #0x00      ;set desired PWM percent to 0
+00E5             90       ;setb OUTPUT_PIN             ;
+00E5 22          91       ret
+00E6             92   
+00E6             93   
+00E6             94   
+00E6             95   Inc_PWM: ; called from fsm.asm
+00E6 E530        96            mov a, Count1ms+0
+00E8 B53807      97       cjne a, desired_PWM+0, Inc_PWM2 
+00EB E531        98            mov a, Count1ms+1
+00ED B53902      99            cjne a, desired_PWM+1, Inc_PWM2
+00F0 C295       100       clr OUTPUT_PIN
+00F2            101   Inc_PWM2:
+00F2 E530       102       mov a, Count1ms+0
+00F4 B4E707     103       cjne a, #low(999), return0 
+00F7 E531       104            mov a, Count1ms+1
+00F9 B40302     105            cjne a, #high(999), return0
+00FC D295       106       setb OUTPUT_PIN  ;NOTE: unsure if swap power flag needed
+00FE            107   return0:
+00FE 22         108            ret
+00FF            109   
+00FF            110   
+00FF            111   
+00FF            112   power0: ; called from states
+00FF C295       113       clr OUTPUT_PIN
+0101 22         114       ret
+0102            115   power20: ; called from states
+0102 7538C8     116       mov desired_PWM+0, #low(200)  ;20% power
+0105 753900     117       mov desired_PWM+1, #high(200)
+0108 22         118       ret
+0109            119   power100: ; called from states
+0109 D295       120       setb OUTPUT_PIN
+010B 22         121       ret
+010C            122   
+010C            123   Timer2_Init:
+010C 75C800     124            mov T2CON, #0 ; Stop timer/counter.  Autoreload mode.
+010F 75CDBF     125            mov TH2, #high(TIMER2_RELOAD)
+0112 75CC28     126            mov TL2, #low(TIMER2_RELOAD)
+0115            127            ; Set the reload value
+0115 43C980     128            orl T2MOD, #0x80 ; Enable timer 2 autoreload
+0118 75CBBF     129            mov RCMP2H, #high(TIMER2_RELOAD)
+011B 75CA28     130            mov RCMP2L, #low(TIMER2_RELOAD)
+011E            131            ; Init One millisecond interrupt counter.  It is a 16-bit variable made with two 8-bit parts
+011E E4         132            clr a
+011F F530       133            mov Count1ms+0, a
+0121 F531       134            mov Count1ms+1, a
+0123            135            ; Enable the timer and interrupts
+0123 439B80     136            orl EIE, #0x80 ; Enable timer 2 interrupt ET2=1
+0126 D2CA       137       setb TR2  ; 
+0128 22         138            ret
+0129            139   
+0129            140       
+0129            141   
+0129            142   ;---------------------------------;
+0129            143   ; ISR for timer 2                 ;
+0129            144   ;---------------------------------;
+0129            145   Timer2_ISR:
+0129 C2CF       146            clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in the ISR.  It is bit addressable.
+012B            147            
+012B            148            ; The two registers used in the ISR must be saved in the stack
+012B C0E0       149            push acc
+012D C0D0       150            push psw
+012F            151            
+012F            152            ; Increment the 16-bit one mili second counter
+012F 0530       153            inc Count1ms+0    ; Increment the low 8-bits first
+0131 E530       154            mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
+0133 7002       155            jnz Inc_Done
+0135 0531       156            inc Count1ms+1
+0137            157   
+0137            158   Inc_Done:
+0137 E536       159            mov a, timer_state
+0139 B40103     160            cjne a, #0x01, continue; if in timer state, jump
+013C 1200E6     161            lcall Inc_PWM
+013F            162   continue:        
+013F            163            ; Check if half second has passed
+013F E530       164            mov a, Count1ms+0
+0141 B4E82E     165            cjne a, #low(1000), Timer2_ISR_done 
+0144 E531       166            mov a, Count1ms+1
+0146 B40329     167            cjne a, #high(1000), Timer2_ISR_done
+0149            168            
+0149            169   
+0149 E4         170            clr a
+014A F530       171            mov Count1ms+0, a
+014C F531       172            mov Count1ms+1, a
+014E            173            ; Increment the BCD counter
+014E E532       174            mov a, BCD_counter
+0150 2401       175            add a, #0x01
+0152 D4         176            da a
+0153 F532       177            mov BCD_counter, a
+0155            178       
+0155 F532       179       mov BCD_counter, a
+0157 B53518     180            cjne a, Resulting_Counter, Timer2_ISR_done ; IF Resulting_counter is not BCD_counter, then skip
+015A E536       181            mov a, timer_state
+015C B40113     182       cjne a, #0x01, Timer2_ISR_done; if we are NOT in a timer state, jump to ISR_done
+015F            183   
+015F            184            ; IF STATE 1, then check 
+015F E533       185            mov a, STATE_NUM
+0161 B40109     186            cjne a, #0x01, OtherStates ; if STATE_NUM is NOT 1, jump
+0164            187            ; CHECK if temperature is LESS than 50
+0164 753300     188            mov STATE_NUM, #0x00
+0167 753200     189            mov BCD_counter, #0x00
+016A 020172     190            ljmp Timer2_ISR_done
+016D            191   OtherStates:
+016D 753200     192            mov BCD_counter, #0x00
+0170 0533       193            inc STATE_NUM   ; increment state
+0172            194   Timer2_ISR_done:
+0172            195   
+0172            196   
+0172 D0D0       197            pop psw
+0174 D0E0       198            pop acc
+0176 32         199            reti
+0177            200   
+0177            201   LCD:
+0177 C0E0       202            push acc
+0179 7405       202            mov a, #5
+017B 14         202            dec a
+017C 1200C5     202            lcall ?Set_Cursor_2 ; Select column and row
+017F D0E0       202            pop acc
+0181 C000       203            push ar0
+0183 A835       203            mov r0, Resulting_Counter
+0185 1200CC     203            lcall ?Display_BCD
+0188 D000       203            pop ar0
+018A C0E0       204            push acc
+018C 7401       204            mov a, #1
+018E 14         204            dec a
+018F 1200C5     204            lcall ?Set_Cursor_2 ; Select column and row
+0192 D0E0       204            pop acc
+0194 C000       205            push ar0
+0196 A832       205            mov r0, BCD_counter
+0198 1200CC     205            lcall ?Display_BCD
+019B D000       205            pop ar0
+019D C0E0       206            push acc
+019F 7401       206            mov a, #1
+01A1 14         206            dec a
+01A2 1200C7     206            lcall ?Set_Cursor_1 ; Select column and row
+01A5 D0E0       206            pop acc
+01A7 C000       207            push ar0
+01A9 A833       207            mov r0, STATE_NUM
+01AB 1200CC     207            lcall ?Display_BCD
+01AE D000       207            pop ar0
+01B0 22         208       ret
+01B1            209   
+01B1            210   
+01B1            211   
+01B1            212            ; PROBLEM, 1ms uses TIMER 0
+01B1            213   Wait50milliSec:
+01B1 7A0A       214       mov R2, #10
+01B3 79C8       215   W3: mov R1, #200
+01B5 7868       216   W2: mov R0, #104
+01B7 D8FE       217   W1: djnz R0, W1 ; 4 cycles->4*60.285ns*104=25us
+01B9 D9FA       218       djnz R1, W2 ; 25us*200=5.0ms
+01BB DAF6       219       djnz R2, W3 ; 5.0ms*10=50ms (approximately)
+01BD 22         220       ret
+01BE            221   
+01BE            222   StateChanges: ; checks what will be the counter number for each state
+01BE E533       223            mov a, STATE_NUM
+01C0 B40006     224            cjne a, #0x00, next1 ; if STATE_NUM is NOT 0, jump to next1
+01C3            225            
+01C3 1201F9     226            lcall state0
+01C6 0201F8     227            ljmp done_state_counter
+01C9            228   next1:
+01C9 E533       229            mov a, STATE_NUM
+01CB B40106     230            cjne a, #0x01, next2 ; if STATE_NUM is NOT 1, jump to next2
+01CE            231   
+01CE 120214     232            lcall state1
+01D1 0201F8     233            ljmp done_state_counter
+01D4            234   next2:
+01D4 E533       235            mov a, STATE_NUM
+01D6 B40206     236            cjne a, #0x02, next3 ; if STATE_NUM is NOT 2, jump to next3
+01D9            237            
+01D9 12022F     238            lcall state2
+01DC 0201F8     239            ljmp done_state_counter
+01DF            240   next3:
+01DF E533       241            mov a, STATE_NUM
+01E1 B40306     242            cjne a, #0x03, next4 ; if STATE_NUM is NOT 3, jump to next4
+01E4            243   
+01E4 120245     244            lcall state3
+01E7 0201F8     245            ljmp done_state_counter
+01EA            246   next4:
+01EA E533       247            mov a, STATE_NUM
+01EC B40406     248            cjne a, #0x04, next5 ; if STATE_NUM is NOT 4, jump to next5
+01EF            249   
+01EF 120263     250            lcall state4
+01F2 0201F8     251            ljmp done_state_counter
+01F5            252   next5:
+01F5 120279     253            lcall state5
+01F8            254            ; STATE 5
+01F8            255            
+01F8            256   done_state_counter:
+01F8 22         257            ret
+01F9            258   
+01F9            259   
+01F9            260   
+01F9            261   
+01F9            262   
+01F9            263   state0:
+01F9 753600     264       mov timer_state, #0x00
+01FC 1200FF     265       lcall power0
+01FF 209711     266            jb START_BUTTON, quit0 ; if START BUTTON is NOT PRESSED
+0202 1201B1     267            lcall Wait50milliSec
+0205 20970B     268            jb START_BUTTON, quit0
+0208            269   
+0208 3097FD     270            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+020B 753200     271            mov BCD_counter, #0x00
+020E 753560     272            mov Resulting_Counter, #0x60
+0211 0533       273            inc STATE_NUM
+0213            274   quit0:
+0213 22         275            ret
+0214            276   state1:
+0214 753601     277       mov timer_state, #0x01
+0217 120109     278       lcall power100
+021A 209711     279            jb START_BUTTON, quit1 ; if START BUTTON is NOT PRESSED
+021D 1201B1     280            lcall Wait50milliSec
+0220 20970B     281            jb START_BUTTON, quit1
+0223            282   
+0223 3097FD     283            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+0226            284            ; IF TEMPERATURE is 150, 
+0226            285       
+0226 753200     286            mov BCD_counter, #0x00
+0229 753506     287            mov Resulting_Counter, #0x06
+022C 0533       288            inc STATE_NUM
+022E            289   quit1:
+022E 22         290            ret 
+022F            291            
+022F            292   state2:
+022F 120102     293       lcall power20
+0232 753601     294       mov timer_state, #0x01
+0235 20970C     295       jb START_BUTTON, quit2 ; if START BUTTON is NOT PRESSED
+0238 1201B1     296            lcall Wait50milliSec
+023B 209706     297            jb START_BUTTON, quit2
+023E            298   
+023E 3097FD     299            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+0241 753600     300       mov timer_state, #0x00
+0244            301   quit2:
+0244 22         302            ret
+0245            303   
+0245            304   state3:
+0245 120109     305       lcall power100
+0248 753600     306       mov timer_state, #0x00
+024B 209714     307       jb START_BUTTON, quit3 ; if START BUTTON is NOT PRESSED
+024E 1201B1     308            lcall Wait50milliSec
+0251 20970E     309            jb START_BUTTON, quit3
+0254            310   
+0254 3097FD     311            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+0257            312            ; IF TEMPERATURE REACHES RIGHT VALUE
+0257 753601     313       mov timer_state, #0x01
+025A 753200     314            mov BCD_counter, #0x00
+025D 753507     315            mov Resulting_Counter, #0x07
+0260 0533       316            inc STATE_NUM
+0262            317   quit3:
+0262 22         318            ret
+0263            319   
+0263            320   state4:
+0263 120102     321       lcall power20
+0266 753601     322       mov timer_state, #0x01
+0269 20970C     323       jb START_BUTTON, quit4 ; if START BUTTON is NOT PRESSED
+026C 1201B1     324            lcall Wait50milliSec
+026F 209706     325            jb START_BUTTON, quit4
+0272            326   
+0272 3097FD     327            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+0275 753200     328            mov BCD_counter, #0x00
+0278            329   quit4:
+0278 22         330            ret
+0279            331   state5:
+0279 1200FF     332       lcall power0
+027C 753600     333       mov timer_state, #0x00
+027F 20970F     334       jb START_BUTTON, quit5 ; if START BUTTON is NOT PRESSED
+0282 1201B1     335            lcall Wait50milliSec
+0285 209709     336            jb START_BUTTON, quit5
+0288            337   
+0288 3097FD     338            jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+028B            339            ; CHECK IF TEMPERATURE REACHES VERY LOW VALUE
+028B 753300     340            mov STATE_NUM, #0x00
+028E 753200     341            mov BCD_counter, #0x00
+0291            342   quit5:
+0291 22         343            ret
+0292            344   
+0292            345   FSM_main:
+0292 75817F     346       mov SP, #0x7F
+0295            347       
+0295 75B100     348       mov P0M1, #0x00
+0298 75B200     349       mov P0M2, #0x00
+029B 75B300     350       mov P1M1, #0x00
+029E 75B400     351       mov P1M2, #0x00
+02A1 75AD00     352       mov P3M2, #0x00
+02A4 75AD00     353       mov P3M2, #0x00
+02A7            354       
+02A7            355       
+02A7            356       
+02A7            357       
+02A7 753200     358            mov BCD_counter, #0x00
+02AA 753300     359            mov STATE_NUM, #0x00
+02AD 753500     360            mov Resulting_Counter, #0x00
+02B0            361   
+02B0 120087     362       lcall LCD_4BIT
+02B3 1200E2     363       lcall PWM_main
+02B6 12010C     364            lcall Timer2_Init
+02B9 D2AF       365       setb EA   ; Enable Global interrupts
+02BB            366   FSM_forever:
+02BB            367   
+02BB 120177     368            lcall LCD
+02BE 1201BE     369            lcall StateChanges
+02C1            370            
+02C1            371            
+02C1            372       
+02C1            373   
+02C1 0202BB     374            ljmp FSM_forever
+02C4            375   
+02C4            376   
+02C4            377   ; 
+02C4            378   END
