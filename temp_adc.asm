@@ -31,6 +31,7 @@ CLK           EQU 16600000 ; Microcontroller System Frequency in Hz
 BAUD              EQU 115200 ; Baud Rate for UART in BPS
 
 TIMER1_RELOAD     EQU (0X100 - (CLK / (16 * BAUD)))
+TIMER0_RELOAD_1MS EQU (0X10000 - (CLK / 1000))
 
 ORG 0x0000
 	LJMP Main
@@ -56,8 +57,10 @@ Y:   DS 4
 BCD: DS 5
 
 VLED_ADC: DS 2
-LM335_ADC: DS 2
-Thermocouple_ADC: DS 2
+
+LM335_TEMP: DS 2
+THERMOCOUPLE_TEMP: DS 2
+OVEN_TEMP: DS 1
 
 BSEG
 MF: DBIT 1
@@ -98,6 +101,12 @@ Init_Timer1:
 	ORL	TMOD, #0X20 ; Timer 1 Mode 2
 	MOV	TH1, #TIMER1_RELOAD ; TH1 = TIMER1_RELOAD;
 	SETB TR1
+Init_Timer0:
+    ; Init Timer 0 for Delay Functions
+	CLR	TR0 ; Stop Timer 0
+	ORL	CKCON, #0X08 ; CLK is Input for Timer 0.
+	ANL	TMOD, #0XF0 ; Clear Configuration Bits for Timer 0
+	ORL	TMOD, #0X01 ; Timer 0 in Mode 1 : 16-bit Timer
 Init_ADC:
 	; Initialize the pins used by the ADC (P1.1, P1.7, P3.0) as Analog Inputs
 	ORL	P1M1, #0B1000_0010
@@ -118,6 +127,21 @@ Init_ADC:
 
 	ORL ADCCON1, #0X01 ; Enable ADC
 
+	RET
+
+Wait_1ms:
+	CLR	TR0 ; Stop Timer 0
+	CLR	TF0 ; Clear Overflow Flag
+	MOV	TH0, #HIGH(TIMER0_RELOAD_1MS)
+	MOV	TL0,#LOW(TIMER0_RELOAD_1MS)
+	SETB TR0
+	JNB	TF0, $ ; Wait for Timer 0 Overflow
+	RET
+
+; Wait Number of ms in R2
+Wait_ms:
+	LCALL Wait_1ms
+	DJNZ R2, Wait_ms
 	RET
 
 CARRIAGE_RETURN:
@@ -156,6 +180,16 @@ Init_LCD:
 Forever:
 	SJMP Read_ADC_LED
 Read_ADC_LED:
+	MOV LM335_TEMP+0, #0
+	MOV LM335_TEMP+1, #0
+	MOV LM335_TEMP+2, #0
+	MOV LM335_TEMP+3, #0
+
+	MOV THERMOCOUPLE_TEMP+0, #0
+	MOV THERMOCOUPLE_TEMP+1, #0
+	MOV THERMOCOUPLE_TEMP+2, #0
+	MOV THERMOCOUPLE_TEMP+3, #0
+
 	; Read AIN0 on Pin 6
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X00 ; Select ADC Channel 0
@@ -164,38 +198,69 @@ Read_ADC_LED:
 	; Save Result to Use Later.
 	MOV VLED_ADC+0, R0
 	MOV VLED_ADC+1, R1
-Read_ADC_LM335:
+Get_Temp_LM335:
 	; Read AIN1 on Pin 14
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X01 ; Select ADC Channel 1
 
 	LCALL Read_ADC_Start
+	LCALL Convert_Voltage_Temp
+	LCALL Calculate_Temp
+
 	; Save Result to Use Later.
-	MOV LM335_ADC+0, R0
-	MOV LM335_ADC+1, R1
-	LJMP Convert_Display
-Read_ADC_ThermoCouple:
+	MOV LM335_TEMP+0, X+0
+	MOV LM335_TEMP+1, X+1
+
+	LCALL hex2BCD
+	LCALL Display_LM335_BCD
+Get_Temp_Thermocouple:
 	; Read AIN7 on Pin 14
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X07 ; Select ADC Channel 7
 	LCALL Read_ADC_Start
+	LCALL Convert_Voltage_Temp
+    LCALL Calculate_Temp
 
 	; Save Result to Use Later.
-	MOV Thermocouple_ADC+0, R0
-	MOV Thermocouple_ADC+1, R1
-Convert_Display:
-	LCALL Add_ADC
-	LCALL Convert_Voltage_Analog
-    LCALL Calculate_Temp
+	MOV THERMOCOUPLE_TEMP+0, X+0
+	MOV THERMOCOUPLE_TEMP+1, X+1
+
+	LCALL hex2BCD
+	LCALL Display_Thermocouple_BCD
+Convert_Temp_Oven:
+	LCALL Add_Temp
+
+	MOV X+3, #0
+	MOV X+2, #0
+	MOV X+1, #0
+	MOV X+0, OVEN_TEMP
 
 	LCALL hex2BCD
     LCALL TX_Val
-	LCALL Display_Formatted_BCD
+	LCALL Display_Oven_Temperature
 
 	; Convert to BCD and Display
+
+Wait_1000:
+	; Wait 1000 ms Between Conversions
+	MOV R2, #250
+	LCALL Wait_ms
+	MOV R2, #250
+	LCALL Wait_ms
+	MOV R2, #250
+	LCALL Wait_ms
+	MOV R2, #250
+	LCALL Wait_ms
+
 	LJMP Forever
 
-Convert_Voltage_Analog:
+Convert_Voltage_Temp:
+    ; Convert to Voltage
+	MOV X+0, R0
+	MOV X+1, R1
+	MOV X+2, #0 ; Pad Other Bits with 0
+	MOV X+3, #0 ; Pad Other Bits with 0
+
 	Load_y(20740) ; Measured LED Voltage : 2.074V with 4 Decimal Places
 	LCALL mul32
 
@@ -206,29 +271,27 @@ Convert_Voltage_Analog:
 	MOV Y+3, #0 ; Pad Other Bits with 0
 	LCALL div32
 
-    RET
-
-Calculate_Temp:
     Load_y(27300)
     LCALL sub32
-    Load_y(100)
-    LCALL mul32
 
-	RET
+    RET
 
-Add_ADC:
-	MOV X+0, Thermocouple_ADC+0
-	MOV X+1, Thermocouple_ADC+1
+Add_Temp:
+	MOV X+0, LM335_TEMP+0
+	MOV X+1, LM335_TEMP+1
 	MOV X+2, #0 ; Pad Other Bits with 0
 	MOV X+3, #0 ; Pad Other Bits with 0
 
-	; MOV Y+0, LM335_ADC+0
-	; MOV Y+1, LM335_ADC+1
-	MOV Y+0, #0
-	MOV Y+1, #0
+	MOV Y+0, THERMOCOUPLE_TEMP+0
+	MOV Y+1, THERMOCOUPLE_TEMP+1
 	MOV Y+2, #0 ; Pad Other Bits with 0
 	MOV Y+3, #0 ; Pad Other Bits with 0
-	; LCALL add32
+
+	LCALL add32
+	Load_y(100)
+	LCALL div32
+
+	MOV OVEN_TEMP, X+0
 
 	RET
 
@@ -241,12 +304,24 @@ TX_Val:
     RET
 
 ; Display Number with 4 Decimal Places
-Display_Formatted_BCD:
-	Set_Cursor(2, 10)
-	Display_BCD(BCD+2)
-	Display_char(#'.')
+Display_LM335_BCD:
+	Set_Cursor(1, 10)
 	Display_BCD(BCD+1)
+	Display_char(#'.')
 	Display_BCD(BCD+0)
 
+	RET
+
+Display_Thermocouple_BCD:
+	Set_Cursor(2, 10)
+	Display_BCD(BCD+1)
+	Display_char(#'.')
+	Display_BCD(BCD+0)
+
+	RET
+
+Display_Oven_Temperature:
+	Set_Cursor(1, 1)
+	Display_BCD(BCD+0)
 	RET
 END
