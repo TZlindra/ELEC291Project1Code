@@ -17,362 +17,432 @@ $LIST
 ;                               -------
 ;
 
-CLK           EQU 16600000 ; Microcontroller system frequency in Hz
-TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
-TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
+;-------------------;
+; Clock Frequencies ;
+;-------------------;
 
-START_BUTTON equ P1.7
-OUTPUT_PIN 	 equ P1.5
+CLK               EQU 16600000 ; Microcontroller System FrEQUency in Hz
+BAUD              EQU 115200 ; Baud Rate for UART in BPS
+
+TIMER1_RELOAD     EQU (0X100 - (CLK / (16 * BAUD)))
+
+TIMER2_RATE       EQU 1000     ; 1000Hz, for a timer tick of 1ms
+TIMER2_RELOAD     EQU ((65536- (CLK/TIMER2_RATE)))
+
+;-------------------;
+;- Pin Definitions -;
+;-------------------;
+
+START_BUTTON      EQU P1.7 ;ToDo : Button Multiplexer
+OUTPUT_PIN 	      EQU P1.5
+
+REF_ADC           EQU P1.7
+LM335_ADC		  EQU P3.0
+THERMOCOUPLE_ADC  EQU P1.1
+
+;------------------------;
+;   Temperature Values   ;
+;------------------------;
+
+TEMP_ERROR EQU 50
+TEMP_SOAK  EQU 150
+TEMP_REFLOW EQU 217
 
 ; Reset vector
-org 0x0000
-    ljmp FSM_main
+ORG 0x0000
+    LJMP Main
 
 ; External interrupt 0 vector (not used in this code)
-org 0x0003
-	reti
+ORG 0x0003
+	RETI
 
 ; Timer/Counter 0 overflow interrupt vector
-org 0x000B
-	reti
+ORG 0x000B
+	RETI
 
 ; External interrupt 1 vector (not used in this code)
-org 0x0013
-	reti
+ORG 0x0013
+	RETI
 
 ; Timer/Counter 1 overflow interrupt vector (not used in this code)
-org 0x001B
-	reti
+ORG 0x001B
+	RETI
 
 ; Serial port receive/transmit interrupt vector (not used in this code)
-org 0x0023 
-	reti
-	
+ORG 0x0023
+	RETI
+
 ; Timer/Counter 2 overflow interrupt vector
-org 0x002B
-	ljmp Timer2_ISR
+ORG 0x002B
+	LJMP Timer2_ISR
 
-dseg at 0x30
-Count1ms:     ds 2 ; Used to determine when half second has passed
-BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
-STATE_NUM: 	  ds 1 ;
-Current_Counter: 	  ds 1 ; 
-Resulting_Counter:	  ds 1 ;
-timer_state:          ds 1 ;
-beep_count:			  ds 1 ;
-desired_PWM:		  ds 2 ;
+DSEG AT 0x30
 
+STATE_NUM: 	          DS 1 ;
 
-; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
-; instructions with these variables.  This is how you define a 1-bit variable:
-bseg
-;Alarm_En_Flag:	dbit 1
-;timer_state: 		dbit 1 ; is state in a timer state?
+Count1ms:             DS 2 ; Used to Determine When 1s Has Passed
 
-cseg
-; These 'equ' must match the hardware wiring
-LCD_RS equ P1.3
-LCD_E  equ P1.4
-LCD_D4 equ P0.0
-LCD_D5 equ P0.1
-LCD_D6 equ P0.2
-LCD_D7 equ P0.3
+BCD_Counter:          DS 1 ; The BCD counter incremented in the ISR and displayed in the main loop
+Current_Counter: 	  DS 1 ;
+Resulting_Counter:	  DS 1 ;
 
+Timer_State:          DS 1 ;
+beep_count:			  DS 1 ;
+Desired_PWM:		  DS 2 ;
+
+TX_SIZE  EQU 5 ; Size of the Transmit Buffer
+TX_BUFF: DS TX_SIZE ; Buffer for Transmit Characters
+
+X:   DS 4
+Y:   DS 4
+BCD: DS 5
+
+VLED_ADC: DS 2
+
+LM335_TEMP: DS 2 ; 2 Byte Temperature Value With 0.01 Degree Resolution
+THERMOCOUPLE_TEMP: DS 2 ; 2 Byte Temperature Value With 0.01 Degree Resolution
+OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
+
+BSEG
+MF: DBIT 1
+
+Below_Temp_Flag: DBIT 1
+Error_Triggered_Flag: DBIT 1
+
+; Alarm_En_Flag:	DBIT 1
+; Timer_State: 		DBIT 1 ; Is State in a Timer State?
 
 $NOLIST
-$include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
-;$include(timer-pwm.asm)
+$include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
+$include(Serial.INC) ; Library of Serial Port Related Functions and Utility Macros
+$include(math32.INC) ; Library of 32-bit Math Functions
+$include(ADC.INC) ; Library of ADC and Temperature Function
+$include(PWM.INC) ; Library of PWM Functions
 $LIST
 
-pwm_main: ; called in main
-    ;initial values, STARTING AT state0
-    mov desired_PWM, #0x00      ;set desired PWM percent to 0
-    ;setb OUTPUT_PIN             ;
-    ret
+CSEG
 
+LCD_RS EQU P1.3 ; Pin 12
+LCD_E  EQU P1.4 ; Pin 11
+LCD_D4 EQU P0.0 ; Pin 16
+LCD_D5 EQU P0.1 ; Pin 15
+LCD_D6 EQU P0.2 ; Pin 18
+LCD_D7 EQU P0.3 ; Pin 19
 
+Init_Vars:
+    ; Initial Values at State 0
+	MOV STATE_NUM, #0x00
 
-Inc_PWM: ; called from fsm.asm
-	mov a, Count1ms+0
-    cjne a, desired_PWM+0, Inc_PWM2 
-	mov a, Count1ms+1
-	cjne a, desired_PWM+1, Inc_PWM2
-    clr OUTPUT_PIN
-Inc_PWM2:
-    mov a, Count1ms+0
-    cjne a, #low(999), return0 
-	mov a, Count1ms+1
-	cjne a, #high(999), return0
-    setb OUTPUT_PIN  ;NOTE: unsure if swap power flag needed
-return0:
-	ret
+	MOV BCD_Counter, #0x00
+	MOV Resulting_Counter, #0x00
+    MOV Desired_PWM, #0x00
+    ; SETB OUTPUT_PIN
 
+	MOV VLED_ADC+0, #0
+	MOV VLED_ADC+1, #0
 
+	MOV LM335_TEMP+0, #0
+	MOV LM335_TEMP+1, #0
 
-power0: ; called from states
-    clr OUTPUT_PIN
-    ret
-power20: ; called from states
-    mov desired_PWM+0, #low(200)  ;20% power
-    mov desired_PWM+1, #high(200)
-    ret
-power100: ; called from states
-    setb OUTPUT_PIN
-    ret
+	MOV THERMOCOUPLE_TEMP+0, #0
+	MOV THERMOCOUPLE_TEMP+1, #0
 
-Timer2_Init:
-	mov T2CON, #0 ; Stop timer/counter.  Autoreload mode.
-	mov TH2, #high(TIMER2_RELOAD)
-	mov TL2, #low(TIMER2_RELOAD)
-	; Set the reload value
-	orl T2MOD, #0x80 ; Enable timer 2 autoreload
-	mov RCMP2H, #high(TIMER2_RELOAD)
-	mov RCMP2L, #low(TIMER2_RELOAD)
-	; Init One millisecond interrupt counter.  It is a 16-bit variable made with two 8-bit parts
-	clr a
-	mov Count1ms+0, a
-	mov Count1ms+1, a
-	; Enable the timer and interrupts
-	orl EIE, #0x80 ; Enable timer 2 interrupt ET2=1
-    setb TR2  ; 
-	ret
+	RET
 
-    
+;-------------;
+; Timer 2 ISR ;
+;-------------;
 
-;---------------------------------;
-; ISR for timer 2                 ;
-;---------------------------------;
 Timer2_ISR:
-	clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in the ISR.  It is bit addressable.
-	
-	; The two registers used in the ISR must be saved in the stack
-	push acc
-	push psw
-	
-	; Increment the 16-bit one mili second counter
-	inc Count1ms+0    ; Increment the low 8-bits first
-	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
-	jnz Inc_Done
-	inc Count1ms+1
+	CLR TF2  ; Timer 2 Doesn't Clear TF2 Automatically. Do it in the ISR.  It is Bit Addressable.
 
+	; Save Registers to Stack
+	PUSH ACC
+	PUSH PSW
+
+	; Increment 16-bit 1ms Counter.
+	INC Count1ms+0 ; Increment Low 8-bits
+	MOV a, Count1ms+0 ; Increment High 8-bits if Lower 8-bits Overflow
+	JNZ Inc_Done
+	INC Count1ms+1
 Inc_Done:
-	mov a, timer_state
-	cjne a, #0x01, continue; if NOT in timer state, jump
-	lcall Inc_PWM
-continue:	
-	; Check if half second has passed
-	mov a, Count1ms+0
-	cjne a, #low(1000), Timer2_ISR_done 
-	mov a, Count1ms+1
-	cjne a, #high(1000), Timer2_ISR_done
-	
+	MOV A, Timer_State
+	CJNE A, #0x01, Continue ; Jump If Not In Timer State
+	LCALL Inc_PWM
+Continue:
+	; Check If oNE Second Has Passed
+	MOV A, Count1ms+0
+	CJNE A, #LOW(1000), Timer2_ISR_Done
+	MOV A, Count1ms+1
+	CJNE A, #HIGH(1000), Timer2_ISR_Done
 
-	clr a
-	mov Count1ms+0, a
-	mov Count1ms+1, a
+	CLR A
+	MOV Count1ms+0, A
+	MOV Count1ms+1, A
 	; Increment the BCD counter
-	mov a, BCD_counter
-	add a, #0x01
-	da a
-	mov BCD_counter, a
-    
-    mov BCD_counter, a
-	cjne a, Resulting_Counter, Timer2_ISR_done ; IF Resulting_counter is not BCD_counter, then skip
-	mov a, timer_state
-    cjne a, #0x01, Timer2_ISR_done; if we are NOT in a timer state, jump to ISR_done
+	MOV A, BCD_Counter
+	ADD A, #0x01
+	DA A
+	MOV BCD_Counter, A
 
-	; IF STATE 1, then check 
-	mov a, STATE_NUM
-	cjne a, #0x01, OtherStates ; if STATE_NUM is NOT 1, jump
-	; CHECK if temperature is LESS than 50
-	mov STATE_NUM, #0x00
-	mov BCD_counter, #0x00
-	ljmp Timer2_ISR_done
+    MOV BCD_Counter, A
+	CJNE A, Resulting_Counter, Timer2_ISR_Done ; Skip if BCD_Counter != Resulting_Counter
+	MOV A, Timer_State
+    CJNE A, #0x01, Timer2_ISR_Done; Skip If We're Not In Timer State
+
+	MOV A, STATE_NUM
+	CJNE A, #0x01, OtherStates ; Skip If Not State 1
+
+	; Check At 60 Seconds
+	MOV A, BCD_Counter
+	SUBB A, #60
+	JZ Check_Error_State
+	LJMP Timer2_ISR_Done
+Check_Error_State:
+	; Check If Oven Temperature < 50
+	LCALL Check_Temp_Error
+	;ToDO JNB Below_Temp_Flag, Timer2_ISR_Done ; Skip If Oven Temperature >= 50
+Error_State_Triggered:
+	MOV STATE_NUM, #0x00
+	MOV BCD_Counter, #0x00
+	;ToDo LCALL Init_Vars
+
+	LJMP Timer2_ISR_Done
 OtherStates:
-	mov BCD_counter, #0x00
-	inc STATE_NUM 	; increment state
-Timer2_ISR_done:
+	MOV BCD_Counter, #0x00
+	INC STATE_NUM ; Increment State Number
+Timer2_ISR_Done:
+	POP PSW
+	POP ACC
+	RETI
 
+Display_LCD:
+	Set_Cursor(1,1)
+    Display_BCD(STATE_NUM)
 
-	pop psw
-	pop acc
-	reti
-
-LCD:
+	Set_Cursor(2,1)
+    Display_BCD(BCD_Counter)
 	Set_Cursor(2,5)
 	Display_BCD(Resulting_Counter)
-    Set_Cursor(2,1)
-    Display_BCD(BCD_counter)
-    Set_Cursor(1,1)
-    Display_BCD(STATE_NUM)
-    ret
 
+	;ToDo : Problem -> 1ms uses TIMER 0
+    RET
 
+Wait50ms:
+    MOV R2, #10
+W3: MOV R1, #200
+W2: MOV R0, #104
+W1: djnz R0, W1 ; 4 cycles-> 4 * 60.285ns * 104 = 25us
+    djnz R1, W2 ; 25us * 200 = 5.0ms
+    djnz R2, W3 ; 5.0ms * 10 = 50ms (Approximately)
+    RET
 
-	; PROBLEM, 1ms uses TIMER 0
-Wait50milliSec:
-    mov R2, #10
-W3: mov R1, #200
-W2: mov R0, #104
-W1: djnz R0, W1 ; 4 cycles->4*60.285ns*104=25us
-    djnz R1, W2 ; 25us*200=5.0ms
-    djnz R2, W3 ; 5.0ms*10=50ms (approximately)
-    ret
+StateChanges: ; Check What Counter Number Will Be For Each State
+	MOV A, STATE_NUM
+	CJNE A, #0x00, Next1 ; Jump to Next1 if STATE_NUM is NOT 0
 
-StateChanges: ; checks what will be the counter number for each state
-	mov a, STATE_NUM
-	cjne a, #0x00, next1 ; if STATE_NUM is NOT 0, jump to next1
-	
-	lcall state0
-	ljmp done_state_counter
-next1:
-	mov a, STATE_NUM
-	cjne a, #0x01, next2 ; if STATE_NUM is NOT 1, jump to next2
+	LCALL State0
+	LJMP Done_State_Counter
+Next1:
+	MOV A, STATE_NUM
+	CJNE A, #0x01, Next2 ; Jump to Next2 if STATE_NUM is NOT 1
 
-	lcall state1
-	ljmp done_state_counter
-next2:
-	mov a, STATE_NUM
-	cjne a, #0x02, next3 ; if STATE_NUM is NOT 2, jump to next3
-	
-	lcall state2
-	ljmp done_state_counter
-next3:
-	mov a, STATE_NUM
-	cjne a, #0x03, next4 ; if STATE_NUM is NOT 3, jump to next4
+	LCALL State1
+	LJMP Done_State_Counter
+Next2:
+	MOV A, STATE_NUM
+	CJNE A, #0x02, Next3 ; Jump to Next3 if STATE_NUM is NOT 2
 
-	lcall state3
-	ljmp done_state_counter
-next4:
-	mov a, STATE_NUM
-	cjne a, #0x04, next5 ; if STATE_NUM is NOT 4, jump to next5
+	LCALL State2
+	LJMP Done_State_Counter
+Next3:
+	MOV a, STATE_NUM
+	CJNE a, #0x03, Next4 ; Jump to Next4 if STATE_NUM is NOT 3
 
-	lcall state4
-	ljmp done_state_counter
-next5:
-	lcall state5
-	; STATE 5
-	
-done_state_counter:
-	ret
+	LCALL State3
+	LJMP Done_State_Counter
+Next4:
+	MOV A, STATE_NUM
+	CJNE A, #0x04, Next5 ; Jump to Next5 if STATE_NUM is NOT 4
 
+	LCALL State4
+	LJMP Done_State_Counter
+Next5:
+	LCALL State5
+	LJMP Done_State_Counter
 
+Done_State_Counter:
+	RET
 
+State0:
+    MOV Timer_State, #0x00
+    LCALL Power0
+	JB START_BUTTON, Quit0 ; Go to Quit0 If Start Button is NOT Pressed
+	LCALL Wait50ms
+	JB START_BUTTON, Quit0
 
+	JNB START_BUTTON, $ ; Go to State1 If Start Button is Pressed
+	MOV BCD_Counter, #0x00
+	MOV Resulting_Counter, #0x60
+	;ToDo LCALL Init_Vars
+	INC STATE_NUM
+Quit0:
+	RET
 
-state0:
-    mov timer_state, #0x00
-    lcall power0
-	jb START_BUTTON, quit0 ; if START BUTTON is NOT PRESSED
-	lcall Wait50milliSec
-	jb START_BUTTON, quit0
+State1:
+    MOV Timer_State, #0x01
+    LCALL Power100
+	JB START_BUTTON, Quit1 ; Go to Quit1 If Start Button is NOT Pressed
+	LCALL Wait50ms
+	JB START_BUTTON, Quit1
 
-	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-	mov BCD_counter, #0x00
-	mov Resulting_Counter, #0x60
-	inc STATE_NUM
-quit0:
-	ret
-state1:
-    mov timer_state, #0x01
-    lcall power100
-	jb START_BUTTON, quit1 ; if START BUTTON is NOT PRESSED
-	lcall Wait50milliSec
-	jb START_BUTTON, quit1
+	JNB START_BUTTON, $ ; Go to State2 If Start Button is Pressed
+	Check_Temp_Oven(#TEMP_SOAK) ; Check If Oven Temperature Reaches 150
+	;ToDo : Do Something JB Below_Temp_Flag, ________
 
-	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-	; IF TEMPERATURE is 150, 
-    
-	mov BCD_counter, #0x00
-	mov Resulting_Counter, #0x06
-	inc STATE_NUM
-quit1:
-	ret 
-	
-state2:
-    lcall power20
-    mov timer_state, #0x01
-    jb START_BUTTON, quit2 ; if START BUTTON is NOT PRESSED
-	lcall Wait50milliSec
-	jb START_BUTTON, quit2
+	MOV BCD_Counter, #0x00
+	MOV Resulting_Counter, #0x06
+	INC STATE_NUM
+Quit1:
+	RET
 
-	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-    mov timer_state, #0x00
-quit2:
-	ret
+State2:
+    LCALL Power20 ; Set Power to 20%
+    MOV Timer_State, #0x01
+    JB START_BUTTON, Quit2 ; Go to Quit2 If Start Button is NOT Pressed
+	LCALL Wait50ms
+	JB START_BUTTON, Quit2
 
-state3:
-    lcall power100
-    mov timer_state, #0x00
-    jb START_BUTTON, quit3 ; if START BUTTON is NOT PRESSED
-	lcall Wait50milliSec
-	jb START_BUTTON, quit3
+	JNB START_BUTTON, $ ; Go to State3 If Start Button is Pressed
+    MOV Timer_State, #0x00
+Quit2:
+	RET
 
-	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-	; IF TEMPERATURE REACHES RIGHT VALUE
-    mov timer_state, #0x01
-	mov BCD_counter, #0x00
-	mov Resulting_Counter, #0x07
-	inc STATE_NUM
-quit3:
-	ret
+State3:
+    LCALL Power100 ; Set Power to 100%
+    MOV Timer_State, #0x00
+    JB START_BUTTON, Quit3 ; Go to Quit3 If Start Button is NOT Pressed
+	LCALL Wait50ms
+	JB START_BUTTON, Quit3
 
-state4:
-    lcall power20
-    mov timer_state, #0x01
-    jb START_BUTTON, quit4 ; if START BUTTON is NOT PRESSED
-	lcall Wait50milliSec
-	jb START_BUTTON, quit4
+	JNB START_BUTTON, $ ; Go to State4 If Start Button is Pressed
+	Check_Temp_Oven(#TEMP_REFLOW)
+	;ToDo : Do Something JB Below_Temp_Flag, ________
+    MOV Timer_State, #0x01
+	MOV BCD_Counter, #0x00
+	MOV Resulting_Counter, #0x07
+	INC STATE_NUM
+Quit3:
+	RET
 
-	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
-	mov BCD_counter, #0x00
-quit4:
-	ret
-state5:
-    lcall power0
-    mov timer_state, #0x00
-    jb START_BUTTON, quit5 ; if START BUTTON is NOT PRESSED
-	lcall Wait50milliSec
-	jb START_BUTTON, quit5
+State4:
+    LCALL Power20
+    MOV Timer_State, #0x01
+    JB START_BUTTON, Quit4 ; if START BUTTON is NOT PRESSED
+	LCALL Wait50ms
+	JB START_BUTTON, Quit4
 
-	jnb START_BUTTON, $ ; if START BUTTON is PRESSED go to state1
+	JNB START_BUTTON, $ ; if START BUTTON is PRESSED go to State1
+	MOV BCD_Counter, #0x00
+Quit4:
+	RET
+
+State5:
+    LCALL Power0
+    MOV Timer_State, #0x00
+    JB START_BUTTON, Quit5 ; if START BUTTON is NOT PRESSED
+	LCALL Wait50ms
+	JB START_BUTTON, Quit5
+
+	JNB START_BUTTON, $ ; if START BUTTON is PRESSED go to State1
 	; CHECK IF TEMPERATURE REACHES VERY LOW VALUE
-	mov STATE_NUM, #0x00
-	mov BCD_counter, #0x00
-quit5:
-	ret
+	MOV STATE_NUM, #0x00
+	MOV BCD_Counter, #0x00
+Quit5:
+	RET
 
-FSM_main:
-    mov SP, #0x7F
-    
-    mov P0M1, #0x00
-    mov P0M2, #0x00
-    mov P1M1, #0x00
-    mov P1M2, #0x00
-    mov P3M2, #0x00
-    mov P3M2, #0x00
-    
-    
-    
-    
-	mov BCD_counter, #0x00
-	mov STATE_NUM, #0x00
-	mov Resulting_Counter, #0x00
+;----------------;
+; Initialization ;
+;----------------;
+Init_All:
+	MOV	P3M1, #0X00
+	MOV	P3M2, #0X00
 
-    lcall LCD_4BIT
-    lcall PWM_main
-	lcall Timer2_Init
-    setb EA   ; Enable Global interrupts
-FSM_forever:
+	MOV	P1M1, #0X00
+	MOV	P1M2, #0X00
 
-	lcall LCD
-	lcall StateChanges
-	
-	
-    
+	MOV	P0M1, #0X00
+	MOV	P0M2, #0X00
 
-	ljmp FSM_forever
+	LCALL Init_Vars
+Init_SerialPort:
+    ; Configure Serial Port and Baud Rate
 
+    ; Since Reset Button Bounces, Wait a Bit Before Sending Messages.
+    ; Otherwise, We Risk Sending Garbage to the Serial Port.
+    MOV R1, #200
+    MOV R0, #104
+    DJNZ R0, $ ; 4 Cycles-> 4 * 60.285 ns * 104 = 25 us
+    DJNZ R1, $-4 ; 25us * 200 = 5 ms
+Init_Timer1:
+	ORL	CKCON, #0X10 ; CLK is Input for Timer 1.
+	ORL	PCON, #0X80 ; Bit SMOD = 1, Double Baud Rate
+	MOV	SCON, #0X52
+	ANL	T3CON, #0B1101_1111
+	ANL	TMOD, #0X0F ; Clear Configuration Bits for Timer 1
+	ORL	TMOD, #0X20 ; Timer 1 Mode 2
+	MOV	TH1, #TIMER1_RELOAD ; TH1 = TIMER1_RELOAD;
+	SETB TR1
+Init_ADC:
+	; Initialize the pins used by the ADC (P1.1, P1.7, P3.0) as Analog Inputs
+	ORL	P1M1, #0B1000_0010
+	ANL	P1M2, #0B0111_1101
+	ORL	P3M1, #0B0000_0010
+	ANL P3M2, #0B1111_1101
 
-; 
+	; AINDIDS Select if Some Pins are Analog Inputs or Digital I/O
+	MOV AINDIDS, #0X00 ; Disable All Analog Inputs
+	ORL AINDIDS, #0B1000_0011 ; Activate AIN0, AIN1, AIN7
+
+	ORL ADCCON1, #0X01 ; Enable ADC
+Init_Timer2:
+	MOV T2CON, #0 ; Stop Timer. Autoreload Mode.
+	MOV TH2, #HIGH(TIMER2_RELOAD)
+	MOV TL2, #LOW(TIMER2_RELOAD)
+
+	; Set Reload Value
+	ORL T2MOD, #0X80 ; Enable Timer 2 Autoreload Mode
+	MOV RCMP2H, #HIGH(TIMER2_RELOAD)
+	MOV RCMP2L, #LOW(TIMER2_RELOAD)
+
+	; Init 1ms Interrupt Counter. 16-bit Variable with Two 8-bit Parts.
+	CLR A
+	MOV Count1ms+0, A
+	MOV Count1ms+1, A
+
+	; Enable the Timer and Interrupts.
+	ORL EIE, #0X80 ; Enable Timer 2 Interrupt ET2=1
+    SETB TR2  ; Enable Timer 2
+    RET
+
+Main:
+	; Initialization
+	MOV SP, #0X7F
+	LCALL Init_All
+    SETB EA   ; Enable Global interrupts
+	LCALL LCD_4BIT
+Forever:
+	LCALL Display_LCD
+	LCALL StateChanges
+
+	LJMP Forever
+
+;ToDO LCALL Read_ADC_LED
+;ToDO LCALL Get_LM335_TEMP
+;ToDO LCALL Get_Thermocouple_TEMP
+;ToDO LCALL Get_Temp_Oven
+
+; LCALL Check_Temp_Error
+; JB Below_Temp_Flag, Error_State
+
 END
