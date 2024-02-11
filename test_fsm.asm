@@ -21,7 +21,7 @@ $LIST
 ; Clock Frequencies ;
 ;-------------------;
 
-CLK               EQU 16600000 ; Microcontroller System FrEQUency in Hz
+CLK               EQU 16600000 ; Microcontroller System Frequency in Hz
 BAUD              EQU 115200 ; Baud Rate for UART in BPS
 
 TIMER1_RELOAD     EQU (0X100 - (CLK / (16 * BAUD)))
@@ -33,7 +33,7 @@ TIMER2_RELOAD     EQU ((65536- (CLK/TIMER2_RATE)))
 ;- Pin Definitions -;
 ;-------------------;
 
-START_BUTTON      EQU P1.7 ;ToDo : Button Multiplexer
+START_BUTTON      EQU P1.2 ; ToDo : Button Multiplexer
 OUTPUT_PIN 	      EQU P1.5
 
 REF_ADC           EQU P1.7
@@ -91,6 +91,8 @@ TEMP_ERROR: DS 1
 TEMP_SOAK:  DS 1
 TEMP_REFLOW: DS 1
 
+TEMP_DONE EQU 60
+
 TX_SIZE  EQU 5 ; Size of the Transmit Buffer
 TX_BUFF: DS TX_SIZE ; Buffer for Transmit Characters
 
@@ -134,10 +136,9 @@ Init_Vars:
     ; Initial Values at State 0
 	MOV STATE_NUM, #0x00
 
-	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x00
-    MOV Desired_PWM, #0x00
-    ; SETB OUTPUT_PIN
+	MOV TEMP_ERROR, #50
+	MOV TEMP_SOAK, #150
+	MOV TEMP_REFLOW, #217
 
 	MOV VLED_ADC+0, #0
 	MOV VLED_ADC+1, #0
@@ -147,10 +148,16 @@ Init_Vars:
 
 	MOV THERMOCOUPLE_TEMP+0, #0
 	MOV THERMOCOUPLE_TEMP+1, #0
+Reset_Vars:
+	MOV BCD_Counter, #0x00
+	MOV Resulting_Counter, #0x00
+    MOV Desired_PWM+0, #0x00
+    MOV Desired_PWM+1, #0x00
 
-	MOV TEMP_ERROR, #50
-	MOV TEMP_SOAK, #150
-	MOV TEMP_REFLOW, #217
+    SETB OUTPUT_PIN
+	SETB START_BUTTON
+	SETB Below_Temp_Flag
+	CLR Error_Triggered_Flag
 
 	RET
 
@@ -198,22 +205,14 @@ Continue:
 	MOV A, STATE_NUM
 	CJNE A, #0x01, OtherStates ; Skip If Not State 1
 
-	;ToDo : Let's Try to Transmit Data Every 1 Second
-	;ToDo : LCALL TX_Val
-
-	; Check At 60 Seconds
-	MOV A, BCD_Counter
-	SUBB A, #60
-	JZ Check_Error_State
-	LJMP Timer2_ISR_Done
 Check_Error_State:
 	; Check If Oven Temperature < 50
 	LCALL Check_Temp_Error
-	;ToDO JNB Below_Temp_Flag, Timer2_ISR_Done ; Skip If Oven Temperature >= 50
+	JNB Error_Triggered_Flag, Timer2_ISR_Done ; Skip If Oven Temperature <= 50	
 Error_State_Triggered:
+	CLR Error_Triggered_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
-	;ToDo LCALL Init_Vars
 
 	LJMP Timer2_ISR_Done
 OtherStates:
@@ -233,7 +232,6 @@ Display_LCD:
 	Set_Cursor(2,5)
 	Display_BCD(Resulting_Counter)
 
-	;ToDo : Problem -> 1ms uses TIMER 0
     RET
 
 Wait50ms:
@@ -285,11 +283,13 @@ Done_State_Counter:
 State0:
     MOV Timer_State, #0x00
     LCALL Power0
+	;ToDo LCALL Check_Buttons
+
 	JB START_BUTTON, Quit0 ; Go to Quit0 If Start Button is NOT Pressed
 	LCALL Wait50ms
 	JB START_BUTTON, Quit0
 
-	;ToDo LCALL Init_Vars
+	
 	JNB START_BUTTON, $ ; Go to State1 If Start Button is Pressed
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
@@ -306,8 +306,9 @@ State1:
 
 	JNB START_BUTTON, $ ; Go to State2 If Start Button is Pressed
 	Check_Temp_Oven(#TEMP_SOAK) ; Check If Oven Temperature Reaches 150
-	;ToDo : Do Something JB Below_Temp_Flag, ________
+	JB Below_Temp_Flag, Quit1 ; If Temperature Below then jump to quit1
 
+	CLR Below_Temp_Flag
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x06
 	INC STATE_NUM
@@ -334,8 +335,11 @@ State3:
 	JB START_BUTTON, Quit3
 
 	JNB START_BUTTON, $ ; Go to State4 If Start Button is Pressed
+
 	Check_Temp_Oven(#TEMP_REFLOW)
-	;ToDo : Do Something JB Below_Temp_Flag, ________
+	JB Below_Temp_Flag, Quit3
+	
+	CLR Below_Temp_Flag	
     MOV Timer_State, #0x01
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x07
@@ -363,7 +367,11 @@ State5:
 	JB START_BUTTON, Quit5
 
 	JNB START_BUTTON, $ ; if START BUTTON is PRESSED go to State1
-	; CHECK IF TEMPERATURE REACHES VERY LOW VALUE
+
+	Check_Temp_Oven(#TEMP_DONE) ; Check If Oven Temperature Reaches 60
+	JNB Below_Temp_Flag, Quit5  ; IF temperature >= 60, continue in state 5 (0 is above value)
+
+	CLR Below_Temp_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
 Quit5:
@@ -441,16 +449,25 @@ Main:
 	LCALL LCD_4BIT
 Forever:
 	LCALL Display_LCD
+	LCALL Get_and_Transmit_Temp
 	LCALL StateChanges
 
 	LJMP Forever
 
-;ToDO LCALL Read_ADC_LED
-;ToDO LCALL Get_LM335_TEMP
-;ToDO LCALL Get_Thermocouple_TEMP
-;ToDO LCALL Get_Temp_Oven
+Get_and_Transmit_Temp:
+	LCALL Read_ADC_LED
+	LCALL Get_LM335_TEMP
+	LCALL Get_Thermocouple_TEMP
+	LCALL Get_Temp_Oven
 
-; LCALL Check_Temp_Error
-; JB Below_Temp_Flag, Error_State
+	; Let's Try to Transmit Data Every 1 Second
+	MOV A, Count1ms+0
+	CJNE A, #LOW(0), Get_and_Transmit_Temp_Done
+	MOV A, Count1ms+1
+	CJNE A, #HIGH(0), Get_and_Transmit_Temp_Done
+
+	LCALL TX_Val	
+Get_and_Transmit_Temp_Done:	
+	RET
 
 END
