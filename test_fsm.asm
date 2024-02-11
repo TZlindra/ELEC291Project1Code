@@ -40,14 +40,6 @@ REF_ADC           EQU P1.7
 LM335_ADC		  EQU P3.0
 THERMOCOUPLE_ADC  EQU P1.1
 
-;------------------------;
-;   Temperature Values   ;
-;------------------------;
-
-TEMP_ERROR EQU 50
-TEMP_SOAK  EQU 150
-TEMP_REFLOW EQU 217
-
 ; Reset vector
 ORG 0x0000
     LJMP Main
@@ -87,8 +79,17 @@ Current_Counter: 	  DS 1 ;
 Resulting_Counter:	  DS 1 ;
 
 Timer_State:          DS 1 ;
-beep_count:			  DS 1 ;
+Beep_Count:			  DS 1 ;
 Desired_PWM:		  DS 2 ;
+
+;------------------------;
+;   Temperature Values   ;
+;------------------------;
+
+;ToDo : Determine If We Can Access ADC Functions With E.G. #Temp_Error
+TEMP_ERROR: DS 1
+TEMP_SOAK:  DS 1
+TEMP_REFLOW: DS 1
 
 TX_SIZE  EQU 5 ; Size of the Transmit Buffer
 TX_BUFF: DS TX_SIZE ; Buffer for Transmit Characters
@@ -146,6 +147,10 @@ Init_Vars:
 
 	MOV THERMOCOUPLE_TEMP+0, #0
 	MOV THERMOCOUPLE_TEMP+1, #0
+
+	MOV TEMP_ERROR, #50
+	MOV TEMP_SOAK, #150
+	MOV TEMP_REFLOW, #217
 
 	RET
 
@@ -281,10 +286,10 @@ State0:
 	LCALL Wait50ms
 	JB START_BUTTON, Quit0
 
+	;ToDo LCALL Init_Vars
 	JNB START_BUTTON, $ ; Go to State1 If Start Button is Pressed
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
-	;ToDo LCALL Init_Vars
 	INC STATE_NUM
 Quit0:
 	RET
