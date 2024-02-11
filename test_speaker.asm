@@ -89,7 +89,7 @@ BCD_Time_Seconds:  DS 1
 BCD_Alarm_Hours: DS 1
 BCD_Alarm_Minutes: DS 1
 
-beep_count:		ds 1
+Beep_Count:		ds 1
 
 BSEG
 
