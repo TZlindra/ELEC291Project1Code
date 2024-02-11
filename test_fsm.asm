@@ -198,6 +198,9 @@ Continue:
 	MOV A, STATE_NUM
 	CJNE A, #0x01, OtherStates ; Skip If Not State 1
 
+	;ToDo : Let's Try to Transmit Data Every 1 Second
+	;ToDo : LCALL TX_Val
+
 	; Check At 60 Seconds
 	MOV A, BCD_Counter
 	SUBB A, #60
