@@ -118,9 +118,7 @@ MF: DBIT 1
 
 Below_Temp_Flag: DBIT 1
 Error_Triggered_Flag: DBIT 1
-
-; Alarm_En_Flag:	DBIT 1
-; Timer_State: 		DBIT 1 ; Is State in a Timer State?
+Speaker_En_Flag:   DBIT 1
 
 $NOLIST
 $include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
@@ -163,8 +161,6 @@ Display_LCDTest:
     Display_BCD(BCD_Counter)
 	Set_Cursor(2,5)
 	Display_BCD(Resulting_Counter)
-
-	RET
 
 Display_BelowFlag:
 	Set_Cursor(1, 15)
@@ -372,7 +368,7 @@ Done_State_Counter:
 State0:
     MOV Timer_State, #0x00
     LCALL Power0
-	; LCALL Check_Buttons
+	LCALL Check_Buttons
 
 	JB START_BUTTON, Quit0 ; Go to Quit0 If Start Button is NOT Pressed
 	LCALL Wait30ms
@@ -546,42 +542,13 @@ Get_and_Transmit_Temp:
 	LCALL Add_Temp_Oven
 
 	; Let's Try to Transmit Data Every 1 Second
-	MOV A, Count1ms+0
-	CJNE A, #LOW(0), Get_and_Transmit_Temp_Done
-	MOV A, Count1ms+1
-	CJNE A, #HIGH(0), Get_and_Transmit_Temp_Done
+	; MOV A, Count1ms+0
+	; CJNE A, #LOW(0), Get_and_Transmit_Temp_Done
+	; MOV A, Count1ms+1
+	; CJNE A, #HIGH(0), Get_and_Transmit_Temp_Done
 
-	LCALL TX_Temp_Oven
+	; LCALL TX_Temp_Oven
 Get_and_Transmit_Temp_Done:	
-	RET
-
-Check_Temp_Oven:
-	MOV A, OVEN_TEMP
-	SUBB A, R1
-	JC Temp_Below_Threshold
-Temp_NotBelow_Threshold:
-	CLR Below_Temp_Flag
-	SJMP Check_Temp_Oven_Done
-Temp_Below_Threshold:
-	SETB Below_Temp_Flag
-Check_Temp_Oven_Done:
-	RET
-
-Check_Temp_Error:
-	; Check if the Temperature is Below the Error Threshold
-	; If it is, Set the Error_Triggered_Flag Flag
-	; Otherwise, Clear the Error_Triggered_Flag Flag
-	MOV A, OVEN_TEMP
-	MOV R1, TEMP_ERROR
-	SUBB A, R1
-	JC Temp_Error_Triggered
-Temp_Error_Not_Triggered:
-	CLR Error_Triggered_Flag
-	SJMP Check_Temp_Error_Triggered_Done
-Temp_Error_Triggered:
-	SETB Error_Triggered_Flag
-	SJMP Check_Temp_Error_Triggered_Done
-Check_Temp_Error_Triggered_Done:
 	RET
 
 END
