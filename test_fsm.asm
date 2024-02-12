@@ -118,9 +118,7 @@ MF: DBIT 1
 
 Below_Temp_Flag: DBIT 1
 Error_Triggered_Flag: DBIT 1
-
-; Alarm_En_Flag:	DBIT 1
-; Timer_State: 		DBIT 1 ; Is State in a Timer State?
+Speaker_En_Flag:   DBIT 1
 
 $NOLIST
 $include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
@@ -372,7 +370,7 @@ Done_State_Counter:
 State0:
     MOV Timer_State, #0x00
     LCALL Power0
-	; LCALL Check_Buttons
+	LCALL Check_Buttons
 
 	JB START_BUTTON, Quit0 ; Go to Quit0 If Start Button is NOT Pressed
 	LCALL Wait30ms
@@ -533,8 +531,8 @@ Main:
 Forever:
 	LCALL Get_and_Transmit_Temp
 
-	LCALL Display_LCDTest
-	;LCALL Display_LCD
+	; LCALL Display_LCDTest
+	LCALL Display_LCD
 	LCALL StateChanges
 
 	LJMP Forever
@@ -546,12 +544,12 @@ Get_and_Transmit_Temp:
 	LCALL Add_Temp_Oven
 
 	; Let's Try to Transmit Data Every 1 Second
-	MOV A, Count1ms+0
-	CJNE A, #LOW(0), Get_and_Transmit_Temp_Done
-	MOV A, Count1ms+1
-	CJNE A, #HIGH(0), Get_and_Transmit_Temp_Done
+	; MOV A, Count1ms+0
+	; CJNE A, #LOW(0), Get_and_Transmit_Temp_Done
+	; MOV A, Count1ms+1
+	; CJNE A, #HIGH(0), Get_and_Transmit_Temp_Done
 
-	LCALL TX_Temp_Oven
+	; LCALL TX_Temp_Oven
 Get_and_Transmit_Temp_Done:	
 	RET
 
@@ -582,6 +580,5 @@ Temp_Error_Triggered:
 	SETB Error_Triggered_Flag
 	SJMP Check_Temp_Error_Triggered_Done
 Check_Temp_Error_Triggered_Done:
-	RET
-
+	RET	
 END
