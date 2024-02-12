@@ -149,6 +149,7 @@ LCD_D6 EQU P0.2 ; Pin 18
 LCD_D7 EQU P0.3 ; Pin 19
 
 Speaker:
+	jnb Speaker_En_Flag, return_speaker
 ; Increment 16-bit 1ms Counter.
 	INC speaker_counter1ms+0 ; Increment Low 8-bits
 	MOV a, speaker_counter1ms+0 ; Increment High 8-bits if Lower 8-bits Overflow
@@ -169,7 +170,7 @@ Dont_Increment_Byte1:
 	inc speaker_counts
 
 	mov a, speaker_counts
-	cjne a, #0x04, return_speaker
+	cjne a, #0x03, return_speaker
 	mov speaker_counts, #0x00
 	clr Speaker_En_Flag
 return_speaker:
@@ -263,6 +264,10 @@ Reset_Vars:
     MOV Desired_PWM+0, #0x00
     MOV Desired_PWM+1, #0x00
 
+	mov speaker_counts, #0x00
+	mov speaker_counter1ms, #0x00
+	mov speaker_counter1ms+1, #0x00
+
     SETB OUTPUT_PIN
 	SETB START_BUTTON
 	setb TENS_BUTTON
@@ -279,22 +284,17 @@ Timer0_ISR:
     PUSH ACC
 	PUSH PSW
 
-	JNB Speaker_En_Flag, No_Sound
-Generate_Sound:
-	CLR TR0 ; Stop Timer 0.
-	; Timer 0 Doesn't Have 16-Bit Auto-Reload.
+	
+	CLR TR0
 	MOV TH0, #HIGH(TIMER0_RELOAD)
 	MOV TL0, #LOW(TIMER0_RELOAD)
 	SETB TR0
 
+	JNB Speaker_En_Flag, No_Sound
+
 	CPL SPEAKER_OUT ; Toggle the Alarm Out Pin
-	SJMP Timer0_ISR_Done
 No_Sound:
-	; Timer 0 Doesn't Have 16-Bit Auto-Reload.
-	MOV TH0, #HIGH(TIMER0_RELOAD)
-	MOV TL0, #LOW(TIMER0_RELOAD)
-Timer0_ISR_Done:
-	; Restore Registers from Stack.
+	clr SPEAKER_OUT
 	POP PSW
 	POP ACC
 
@@ -316,7 +316,7 @@ Timer2_ISR:
 	JNZ Inc_Done
 	INC Count1ms+1
 Inc_Done:
-	;lcall Speaker
+	lcall Speaker
 	MOV A, Timer_State
 	CJNE A, #0x01, Continue ; Jump If Not In Timer State
 	LCALL Inc_PWM
@@ -415,7 +415,7 @@ Done_State_Counter:
 State0:
     MOV Timer_State, #0x00
     LCALL Power0
-	; LCALL Check_Buttons
+	LCALL Check_Buttons
 
 	JB START_BUTTON, Quit0 ; Go to Quit0 If Start Button is NOT Pressed
 	LCALL Wait30ms
