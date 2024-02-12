@@ -57,7 +57,7 @@ class StripChart:
         self.ax.set_xlim(0, self.xlim)
         self.ax.set_xlabel('Time (s)')
 
-        self.ax.set_ylim(25, 100)
+        self.ax.set_ylim(0, 100)
         self.ax.set_ylabel('Temperature (C)')
 
         self.ax.grid()
@@ -78,6 +78,9 @@ class StripChart:
             return float(self.conn.readline().decode('utf-8').strip('\r\n'))
         else :
             return -273.15
+        
+    def update_color(self):
+        self.line.set_color('red')        
 
     def data_gen(self):
         t = -1
@@ -91,7 +94,10 @@ class StripChart:
             finally :
                 val = self.current_val
                 current_time = dt.datetime.now().strftime('%H:%M:%S')
-            yield t, val, current_time
+            yield t, val, 
+    
+            if t > 1 :
+                self.update_color()
 
     def run(self, data):
         time.sleep(1)
@@ -300,6 +306,10 @@ class App :
         self.paned_window.add(self.strip_chart_frame)
 
         self.root.mainloop()
+
+    def __del__(self):
+        if self.conn is not None:
+            self.conn.close()        
 
     def open_serial(self):
         if self.conn is None :  # Check if Serial Connection Already Established

@@ -146,16 +146,6 @@ Get_LM335_Temperature_BCD:
 	
 	RET
 
-Get_Oven_Temperature_BCD:
-	MOV X+0, OVEN_TEMP
-	MOV X+1, #0
-	MOV X+2, #0
-	MOV X+3, #0
-
-	LCALL hex2BCD
-	
-	RET
-
 Display_LM335_Temperature:
 	LCALL Get_LM335_Temperature_BCD
 
@@ -164,16 +154,15 @@ Display_LM335_Temperature:
 	RET
 
 Display_Oven_Temperature:
-	LCALL Get_Oven_Temperature_BCD
  	MOV A, OVEN_TEMP
  	SUBB A, #100
  	JC Display_Oven_Temperature_2Digits
 Display_Oven_Temperature_3Digits:
  	Set_Cursor(1, 4)
- 	Display_BCD(BCD+1)
+ 	Display_BCD(OVEN_BCD+1)
 Display_Oven_Temperature_2Digits:
 	Set_Cursor(1, 5)
-	Display_BCD(BCD+0)
+	Display_BCD(OVEN_BCD+0)
 Display_Oven_Temperature_Done:
 	RET
 
@@ -204,9 +193,61 @@ Display_Reflow_Temperature:
 	RET
 
 TX_Temp_Oven:
-	LCALL Get_Oven_Temperature_BCD
-    LCALL TX_Val
+    Send_BCD(OVEN_BCD+1)
+    Send_BCD(OVEN_BCD+0)
+    Send_NewLine(#CARRIAGE_RETURN)
 
+	RET
+
+Write_Oven_BCD:
+	MOV X+0, OVEN_TEMP
+	MOV X+1, #0
+	MOV X+2, #0
+	MOV X+3, #0
+
+	LCALL hex2BCD
+	MOV OVEN_BCD+1, BCD+1 
+	MOV OVEN_BCD+0, BCD+0 
+
+	RET
+
+
+Get_and_Transmit_Temp:
+	LCALL Read_ADC_LED
+	LCALL Get_LM335_TEMP
+	LCALL Get_Thermocouple_TEMP
+	LCALL Add_Temp_Oven
+	LCALL Write_Oven_BCD
+Get_and_Transmit_Temp_Done:	
+	RET
+
+Check_Temp_Oven:
+	MOV A, OVEN_TEMP
+	SUBB A, R1
+	JC Temp_Below_Threshold
+Temp_NotBelow_Threshold:
+	CLR Below_Temp_Flag
+	SJMP Check_Temp_Oven_Done
+Temp_Below_Threshold:
+	SETB Below_Temp_Flag
+Check_Temp_Oven_Done:
+	RET
+
+Check_Temp_Error:
+	; Check if the Temperature is Below the Error Threshold
+	; If it is, Set the Error_Triggered_Flag Flag
+	; Otherwise, Clear the Error_Triggered_Flag Flag
+	MOV A, OVEN_TEMP
+	MOV R1, TEMP_ERROR
+	SUBB A, R1
+	JC Temp_Error_Triggered
+Temp_Error_Not_Triggered:
+	CLR Error_Triggered_Flag
+	SJMP Check_Temp_Error_Triggered_Done
+Temp_Error_Triggered:
+	SETB Error_Triggered_Flag
+	SJMP Check_Temp_Error_Triggered_Done
+Check_Temp_Error_Triggered_Done:
 	RET
 
 $LIST

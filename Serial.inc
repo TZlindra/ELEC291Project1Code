@@ -61,12 +61,4 @@ Write_LeastSigDig:
 	POP ACC
 	RET
 
-TX_Val:
-    Send_BCD(BCD+2)
-    Send_BCD(BCD+1)
-    Send_BCD(BCD+0)
-    Send_NewLine(#CARRIAGE_RETURN)
-
-    RET
-
 $LIST
