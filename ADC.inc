@@ -136,56 +136,77 @@ Add_Temp_Oven:
 
 	RET
 
-Get_Temp_Oven:
-	LCALL Add_Temp_Oven
-
-	MOV X+3, #0
+Get_LM335_Temperature_BCD:
+	MOV X+0, LM335_TEMP+0
+	MOV X+1, LM335_TEMP+1
 	MOV X+2, #0
-	MOV X+1, #0
-	MOV X+0, OVEN_TEMP
+	MOV X+3, #0
 
 	LCALL hex2BCD
+	
+	RET
+
+Get_Oven_Temperature_BCD:
+	MOV X+0, OVEN_TEMP
+	MOV X+1, #0
+	MOV X+2, #0
+	MOV X+3, #0
+
+	LCALL hex2BCD
+	
+	RET
+
+Display_LM335_Temperature:
+	LCALL Get_LM335_Temperature_BCD
+
+	Set_Cursor(1, 12)
+	Display_BCD(BCD+1)
+	RET
+
+Display_Oven_Temperature:
+	LCALL Get_Oven_Temperature_BCD
+ 	MOV A, OVEN_TEMP
+ 	SUBB A, #100
+ 	JC Display_Oven_Temperature_2Digits
+Display_Oven_Temperature_3Digits:
+ 	Set_Cursor(1, 4)
+ 	Display_BCD(BCD+1)
+Display_Oven_Temperature_2Digits:
+	Set_Cursor(1, 5)
+	Display_BCD(BCD+0)
+Display_Oven_Temperature_Done:
+	RET
+
+Display_Soak_Temperature:
+	MOV X+0, TEMP_SOAK
+	MOV X+1, #0
+	MOV X+2, #0
+	MOV X+3, #0
+
+	LCALL hex2BCD
+	Set_Cursor(2, 2)
+	Display_BCD(BCD+1)
+	Display_BCD(BCD+0)
+
+	RET
+
+Display_Reflow_Temperature:
+	MOV X+0, TEMP_REFLOW
+	MOV X+1, #0
+	MOV X+2, #0
+	MOV X+3, #0
+
+	LCALL hex2BCD
+	Set_Cursor(2, 10)
+	Display_BCD(BCD+1)
+	Display_BCD(BCD+0)
+
+	RET
+
+TX_Temp_Oven:
+	LCALL Get_Oven_Temperature_BCD
     LCALL TX_Val
 
-	RET
-
-	; Convert to BCD and Display
-
-	LJMP Forever
-
-Check_Temp_Oven MAC
-    PUSH AR0
-    MOV R0, %0
-
-    LCALL ?Check_Temp_Oven
-
-    POP AR0
-ENDMAC
-
-?Check_Temp_Oven:
-	MOV A, OVEN_TEMP
-	SUBB A, R0
-	JC Temp_Below_Threshold
-Temp_NotBelow_Threshold:
-	CLR Below_Temp_Flag
-	SJMP Check_Temp_Oven_Done
-Temp_Below_Threshold:
-	SETB Below_Temp_Flag
-Check_Temp_Oven_Done:
-	RET
-
-Check_Temp_Error:
-	; Check if the Temperature is Below the Error Threshold
-	; If it is, Set the Error_Triggered_Flag Flag
-	; Otherwise, Clear the Error_Triggered_Flag Flag
-	Check_Temp_Oven(#TEMP_ERROR)
-	JB Below_Temp_Flag, Check_Temp_Error_Triggered
-	SJMP Check_Temp_Error_Triggered_Done
-Check_Temp_Error_Triggered:
-	CLR Below_Temp_Flag
-	SETB Error_Triggered_Flag
-	SJMP Check_Temp_Error_Triggered_Done
-Check_Temp_Error_Triggered_Done:
 	RET
 
 $LIST
