@@ -1,9 +1,12 @@
 $NOLIST
 ;----------------------------------------------------
-; Serial_4bit.asm: Sends Char Buffers to Serial Port
+; Serial.inc: Sends Char Buffers to Serial Port
 ;----------------------------------------------------
 
 CSEG
+
+CARRIAGE_RETURN:
+    DB '\r', '\n', 0
 
 ;---------------------------------;
 ; Display a BCD number in the LCD ;
@@ -57,4 +60,5 @@ Write_LeastSigDig:
 	LCALL ?PutChar
 	POP ACC
 	RET
+
 $LIST

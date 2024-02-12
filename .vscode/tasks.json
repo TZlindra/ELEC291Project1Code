@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build ASM file",
+      "type": "shell",
+      "command": ".\\a51",
+      "args": ["${file}"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Flash Hex File",
+      "type": "shell",
+      "command": ".\\ISPN76E003",
+      "args": ["-pCOM3", "${fileBasenameNoExtension}.hex"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "dependsOn": "Build ASM file"
+    }
+  ]
+}

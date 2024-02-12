@@ -38,7 +38,6 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 SET_BUTTON           EQU P1.0 ; Pin 15
 HOUR_FORMAT_BUTTON   EQU P1.1 ; Pin 14
 
-
 DEC_BUTTON           EQU P0.5 ; Pin 1
 HOURS_BUTTON         EQU P1.2 ; Pin 13
 MINUTES_BUTTON       EQU P1.6 ; Pin 8
@@ -89,7 +88,7 @@ BCD_Time_Seconds:  DS 1
 BCD_Alarm_Hours: DS 1
 BCD_Alarm_Minutes: DS 1
 
-beep_count:		ds 1
+Beep_Count:		ds 1
 
 BSEG
 
