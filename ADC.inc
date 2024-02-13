@@ -148,13 +148,10 @@ Add_Temp_Oven:
 
 	LCALL add32
 
-	Load_y(100)
+	Load_y(1000)
 	LCALL div32
 
-	MOV OVEN_TEMP+0, X+0
-	MOV OVEN_TEMP+1, X+1
-	MOV OVEN_TEMP+2, X+2
-	MOV OVEN_TEMP+3, X+3
+	MOV OVEN_TEMP, X+0
 
 	RET
 
@@ -263,10 +260,10 @@ TX_Temp_Oven:
 	RET
 
 Write_Oven_BCD:
-	MOV X+0, OVEN_TEMP+0
-	MOV X+1, OVEN_TEMP+1
-	MOV X+2, OVEN_TEMP+2
-	MOV X+3, OVEN_TEMP+3
+	MOV X+0, OVEN_TEMP
+	MOV X+1, #0
+	MOV X+2, #0
+	MOV X+3, #0
 
 	LCALL hex2BCD
 	MOV OVEN_BCD+3, BCD+3 

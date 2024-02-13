@@ -115,10 +115,10 @@
 0058            117   
 0058            118   LM335_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
 005C            119   THERMOCOUPLE_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
-0060            120   OVEN_TEMP: DS 4 ; 1 Byte Temperature Value With 1 Degree Resolution
-0064            121   
-0064            122   Output_Voltage: DS 4
-0068            123   
+0060            120   OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
+0061            121   
+0061            122   Output_Voltage: DS 4
+0065            123   
 0000            124   BSEG
 0000            125   MF: DBIT 1
 0001            126   

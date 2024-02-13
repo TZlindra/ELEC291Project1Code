@@ -117,7 +117,7 @@ VLED_ADC: DS 2
 
 LM335_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
 THERMOCOUPLE_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
-OVEN_TEMP: DS 4 ; 1 Byte Temperature Value With 1 Degree Resolution
+OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
 
 Output_Voltage: DS 4
 
