@@ -610,6 +610,7 @@ Forever:
 	;LCALL Display_LCD
 	; lcall Display_LCDFinal
 	LCALL StateChanges
+	LCALL TX_StateNumber
 
 	LJMP Forever
 

@@ -57,12 +57,13 @@ class StripChart:
         self.ax.set_xlim(0, self.xlim)
         self.ax.set_xlabel('Time (s)')
 
-        self.ax.set_ylim(25, 100)
+        self.ax.set_ylim(0, 300)
         self.ax.set_ylabel('Temperature (C)')
 
         self.ax.grid()
 
         self.line, = self.ax.plot([], [], lw = 2)
+        self.current_state = 0
         self.current_val = -273.15
         self.x_data, self.y_data = [], []
 
@@ -75,21 +76,36 @@ class StripChart:
     def read_serial(self) :
         if self.conn is not None :
             print(self.conn.readline().decode('utf-8'))
-            return float(self.conn.readline().decode('utf-8').strip('\r\n'))
+            return self.conn.readline().decode('utf-8').strip('\r\n')
         else :
-            return -273.15
+            return None
+
+    def return_state(self, rx_data):
+        states = ['S00', 'S01', 'S02', 'S03', 'S04', 'S05']
+        if rx_data in states:
+            return int(rx_data[-1])
+        else:
+            return -1
 
     def data_gen(self):
         t = -1
         while True :
             t += 1
 
-            try :
-                self.current_val = float(self.read_serial())
-            except (TypeError, ValueError, UnicodeDecodeError) :
-                print("Error Reading Temperature From Serial Port!")
-            finally :
-                val = self.current_val
+            rx_data = self.read_serial()
+            if rx_data is not None :
+                try :
+                    self.current_val = float(rx_data) # Check if Temperature
+                except (TypeError, ValueError, UnicodeDecodeError) :
+                    try :
+                        self.current_state = self.return_state(rx_data)
+                        print(f"State: {self.current_state}")
+                        # Debug Rx Data
+                        print(rx_data)
+                    except (TypeError, ValueError, UnicodeDecodeError) :
+                        print("Error Reading Temperature From Serial Port!")
+                finally :
+                    val = self.current_val
                 current_time = dt.datetime.now().strftime('%H:%M:%S')
             yield t, val, current_time
 
