@@ -19,7 +19,7 @@
       "label": "Flash Hex File",
       "type": "shell",
       "command": ".\\ISPN76E003",
-      "args": ["-pCOM3", "${fileBasenameNoExtension}.hex"],
+      "args": ["-pCOM10", "${fileBasenameNoExtension}.hex"],
       "group": {
         "kind": "build",
         "isDefault": true

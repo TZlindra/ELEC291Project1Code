@@ -68,7 +68,7 @@ Read_ADC_LED:
 
 	RET
 
-Convert_Voltage_Temp:
+Convert_Voltage:
     ; Convert to Voltage
 	MOV X+0, R0
 	MOV X+1, R1
@@ -85,21 +85,25 @@ Convert_Voltage_Temp:
 	MOV Y+3, #0 ; Pad Other Bits with 0
 	LCALL div32
 
-    Load_y(27300)
-    LCALL sub32
-
-    RET
+	RET
 
 Get_LM335_TEMP:
 	; Read AIN1 on Pin 14
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X01 ; Select ADC Channel 1
 	LCALL Read_ADC_Avg
-	LCALL Convert_Voltage_Temp
+	LCALL Convert_Voltage
+Calculate_LM335_TEMP:
+    Load_y(27300)
+    LCALL sub32	
+    Load_y(10)
+    LCALL mul32	
 
 	; Save Result to Use Later.
 	MOV LM335_TEMP+0, X+0
 	MOV LM335_TEMP+1, X+1
+	MOV LM335_TEMP+2, X+2
+	MOV LM335_TEMP+3, X+3
 
 	RET
 
@@ -108,28 +112,43 @@ Get_THERMOCOUPLE_TEMP:
 	ANL ADCCON0, #0XF0
 	ORL ADCCON0, #0X07 ; Select ADC Channel 7
 	LCALL Read_ADC_Avg
-	LCALL Convert_Voltage_Temp
+	LCALL Convert_Voltage
+Calculate_THERMOCOUPLE_TEMP:
+	LCALL hex2bcd
+	MOV Output_Voltage+3, BCD+3
+	MOV Output_Voltage+2, BCD+2
+	MOV Output_Voltage+1, BCD+1
+	MOV Output_Voltage+0, BCD+0
+
+	Load_y(1000) ; Vout * 1000 / 12424
+	LCALL mul32
+	Load_y(12424)
+	LCALL div32
+	Load_y(100) 
+	LCALL mul32
 
 	; Save Result to Use Later.
-	MOV THERMOCOUPLE_TEMP+0, X+0
+	MOV THERMOCOUPLE_TEMP+3, X+3
+	MOV THERMOCOUPLE_TEMP+2, X+2
 	MOV THERMOCOUPLE_TEMP+1, X+1
+	MOV THERMOCOUPLE_TEMP+0, X+0
 
 	RET
 
 Add_Temp_Oven:
-	MOV X+0, LM335_TEMP+0
+	MOV X+3, LM335_TEMP+3
+	MOV X+2, LM335_TEMP+2
 	MOV X+1, LM335_TEMP+1
-	MOV X+2, #0 ; Pad Other Bits with 0
-	MOV X+3, #0 ; Pad Other Bits with 0
+	MOV X+0, LM335_TEMP+0
 
-	MOV Y+0, THERMOCOUPLE_TEMP+0
+	MOV Y+3, THERMOCOUPLE_TEMP+3
+	MOV Y+2, THERMOCOUPLE_TEMP+2
 	MOV Y+1, THERMOCOUPLE_TEMP+1
-	MOV Y+2, #0 ; Pad Other Bits with 0
-	MOV Y+3, #0 ; Pad Other Bits with 0
+	MOV Y+0, THERMOCOUPLE_TEMP+0
 
 	LCALL add32
 
-	Load_y(100)
+	Load_y(1000)
 	LCALL div32
 
 	MOV OVEN_TEMP, X+0
@@ -139,8 +158,18 @@ Add_Temp_Oven:
 Get_LM335_Temperature_BCD:
 	MOV X+0, LM335_TEMP+0
 	MOV X+1, LM335_TEMP+1
-	MOV X+2, #0
-	MOV X+3, #0
+	MOV X+2, LM335_TEMP+2
+	MOV X+3, LM335_TEMP+3
+
+	LCALL hex2BCD
+	
+	RET
+
+Get_Thermocouple_Temperature_BCD:
+	MOV X+0, THERMOCOUPLE_TEMP+0
+	MOV X+1, THERMOCOUPLE_TEMP+1
+	MOV X+2, THERMOCOUPLE_TEMP+2
+	MOV X+3, THERMOCOUPLE_TEMP+3
 
 	LCALL hex2BCD
 	
@@ -149,22 +178,49 @@ Get_LM335_Temperature_BCD:
 Display_LM335_Temperature:
 	LCALL Get_LM335_Temperature_BCD
 
-	Set_Cursor(1, 12)
+	Set_Cursor(1, 10)
+	Display_BCD(BCD+2)
 	Display_BCD(BCD+1)
+	Display_BCD(BCD+0)
+	
+	RET
+
+Display_Thermocouple_Temperature:
+	LCALL Get_Thermocouple_Temperature_BCD
+
+	Set_Cursor(2, 1)
+	Display_BCD(BCD+2)
+	Display_BCD(BCD+1)
+	
 	RET
 
 Display_Oven_Temperature:
- 	MOV A, OVEN_TEMP
- 	SUBB A, #100
- 	JC Display_Oven_Temperature_2Digits
+	MOV A, OVEN_TEMP
+	CLR C
+	SUBB A, #100
+	JC Display_Oven_Temperature_2Digits
 Display_Oven_Temperature_3Digits:
- 	Set_Cursor(1, 4)
+	Set_Cursor(1, 4)
  	Display_BCD(OVEN_BCD+1)
-Display_Oven_Temperature_2Digits:
-	Set_Cursor(1, 5)
-	Display_BCD(OVEN_BCD+0)
-Display_Oven_Temperature_Done:
+ 	Display_BCD(OVEN_BCD+0)
 	RET
+Display_Oven_Temperature_2Digits:
+	Set_Cursor(1, 4)
+	Display_char(#' ')
+ 	Display_BCD(OVEN_BCD+0)
+	RET
+
+Display_Output_Voltage:
+	MOV A, Output_Voltage
+
+	Set_Cursor(1, 1)
+	Display_BCD(Output_Voltage+3)
+	Display_BCD(Output_Voltage+2)
+	Display_BCD(Output_Voltage+1)
+	Display_BCD(Output_Voltage+0)
+
+	RET
+
 
 Display_Soak_Temperature:
 	MOV X+0, TEMP_SOAK
@@ -210,7 +266,6 @@ Write_Oven_BCD:
 	MOV OVEN_BCD+0, BCD+0 
 
 	RET
-
 
 Get_and_Transmit_Temp:
 	LCALL Read_ADC_LED
