@@ -113,13 +113,13 @@ BCD: DS 5
 
 OVEN_BCD: DS 4
 
+Output_Voltage: DS 4
 VLED_ADC: DS 2
 
 LM335_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
 THERMOCOUPLE_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
 OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
 
-Output_Voltage: DS 4
 
 BSEG
 MF: DBIT 1
@@ -177,19 +177,19 @@ Display_LCD:
 
 Display_LCDTest:
 	lcall Display_LM335_Temperature
-	lcall Display_Thermocouple_Temperature
+	; lcall Display_Thermocouple_Temperature
 	lcall Display_Oven_Temperature
 
-	; Set_Cursor(1,1)
-    ; Display_BCD(STATE_NUM)
+	Set_Cursor(1,1)
+    Display_BCD(STATE_NUM)
 
-	; Set_Cursor(2,1)
-    ; Display_BCD(BCD_Counter)
-	; Set_Cursor(2,5)
-	; Display_BCD(Resulting_Counter)
+	Set_Cursor(2,1)
+    Display_BCD(BCD_Counter)
+	Set_Cursor(2,5)
+	Display_BCD(Resulting_Counter)
 
 	; lcall Display_SpeakerFlag
-	; lcall Display_BelowFlag
+	lcall Display_BelowFlag
 
 	; LCALL Display_Output_Voltage
 
@@ -236,7 +236,7 @@ done_reflow_and_soak_temp_check:
 
 Init_Vars:
     ; Initial Values at State 0
-	MOV STATE_NUM, #0x02
+	MOV STATE_NUM, #0x00
 
 	MOV TEMP_ERROR, #50
 	MOV TEMP_SOAK, #145
@@ -414,7 +414,7 @@ State0:
 	
 	JNB START_BUTTON, $ ; Go to State1 If Start Button is Pressed
 	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x06
+	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
 	;setb TR0
 Quit0:
@@ -430,7 +430,7 @@ State1:
 
 	;CLR Below_Temp_Flag
 	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x06
+	MOV Resulting_Counter, #0x90
 	INC STATE_NUM
 Quit1:
 	RET
@@ -438,12 +438,7 @@ Quit1:
 State2:
     LCALL Power20 ; Set Power to 20%
     MOV Timer_State, #0x01
-    JB START_BUTTON, Quit2 ; Go to Quit2 If Start Button is NOT Pressed
-	LCALL Wait30ms
-	JB START_BUTTON, Quit2
-
-	JNB START_BUTTON, $ ; Go to State3 If Start Button is Pressed
-    MOV Timer_State, #0x00
+    
 Quit2:
 	RET
 
@@ -458,7 +453,7 @@ State3:
 	;CLR Below_Temp_Flag	
     MOV Timer_State, #0x01
 	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x07
+	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
 Quit3:
 	RET

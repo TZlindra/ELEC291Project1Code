@@ -179,7 +179,6 @@ Display_LM335_Temperature:
 	LCALL Get_LM335_Temperature_BCD
 
 	Set_Cursor(1, 10)
-	Display_BCD(BCD+3)
 	Display_BCD(BCD+2)
 	Display_BCD(BCD+1)
 	Display_BCD(BCD+0)
@@ -190,26 +189,25 @@ Display_Thermocouple_Temperature:
 	LCALL Get_Thermocouple_Temperature_BCD
 
 	Set_Cursor(2, 1)
-	Display_BCD(BCD+3)
 	Display_BCD(BCD+2)
 	Display_BCD(BCD+1)
-	Display_BCD(BCD+0)
 	
 	RET
 
 Display_Oven_Temperature:
-;  	MOV A, OVEN_TEMP
-;  	SUBB A, #100
-; JC Display_Oven_Temperature_2Digits
-; Display_Oven_Temperature_3Digits:
-	Set_Cursor(1, 1)
- 	Display_BCD(OVEN_BCD+3)
- 	Display_BCD(OVEN_BCD+2)
+	MOV A, OVEN_TEMP
+	CLR C
+	SUBB A, #100
+	JC Display_Oven_Temperature_2Digits
+Display_Oven_Temperature_3Digits:
+	Set_Cursor(1, 4)
  	Display_BCD(OVEN_BCD+1)
  	Display_BCD(OVEN_BCD+0)
-; Display_Oven_Temperature_2Digits:
-; 	Set_Cursor(1, 5)
-Display_Oven_Temperature_Done:
+	RET
+Display_Oven_Temperature_2Digits:
+	Set_Cursor(1, 4)
+	Display_char(#' ')
+ 	Display_BCD(OVEN_BCD+0)
 	RET
 
 Display_Output_Voltage:
@@ -251,8 +249,6 @@ Display_Reflow_Temperature:
 	RET
 
 TX_Temp_Oven:
-    Send_BCD(OVEN_BCD+3)
-    Send_BCD(OVEN_BCD+2)
     Send_BCD(OVEN_BCD+1)
     Send_BCD(OVEN_BCD+0)
     Send_NewLine(#CARRIAGE_RETURN)
@@ -266,8 +262,6 @@ Write_Oven_BCD:
 	MOV X+3, #0
 
 	LCALL hex2BCD
-	MOV OVEN_BCD+3, BCD+3 
-	MOV OVEN_BCD+2, BCD+2 
 	MOV OVEN_BCD+1, BCD+1 
 	MOV OVEN_BCD+0, BCD+0 
 
