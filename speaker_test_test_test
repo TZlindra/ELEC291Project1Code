@@ -30,7 +30,7 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 CLEAR_BUTTON  equ P1.5
 UPDOWN        equ P1.6
-SOUND_OUT     equ P0.4
+SOUND_OUT     equ P1.7
 
 ; Reset vector
 org 0x0000
@@ -145,7 +145,7 @@ Timer2_Init:
 ;---------------------------------;
 Timer2_ISR:
 	clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in the ISR.  It is bit addressable.
-	;cpl P0.4 ; To check the interrupt rate with oscilloscope. It must be precisely a 1 ms pulse.
+	cpl P0.4 ; To check the interrupt rate with oscilloscope. It must be precisely a 1 ms pulse.
 	
 	; The two registers used in the ISR must be saved in the stack
 	push acc
@@ -186,6 +186,8 @@ Timer2_ISR_done:
 	pop psw
 	pop acc
 	reti
+
+
 
 ;---------------------------------;
 ; Main program. Includes hardware ;

@@ -111,15 +111,13 @@ X:   DS 4
 Y:   DS 4
 BCD: DS 5
 
-OVEN_BCD: DS 4
+OVEN_BCD: DS 2
 
 VLED_ADC: DS 2
 
-LM335_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
-THERMOCOUPLE_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
-OVEN_TEMP: DS 4 ; 1 Byte Temperature Value With 1 Degree Resolution
-
-Output_Voltage: DS 4
+LM335_TEMP: DS 2 ; 2 Byte Temperature Value With 0.01 Degree Resolution
+THERMOCOUPLE_TEMP: DS 2 ; 2 Byte Temperature Value With 0.01 Degree Resolution
+OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
 
 BSEG
 MF: DBIT 1
@@ -177,22 +175,18 @@ Display_LCD:
 
 Display_LCDTest:
 	lcall Display_LM335_Temperature
-	lcall Display_Thermocouple_Temperature
 	lcall Display_Oven_Temperature
 
-	; Set_Cursor(1,1)
-    ; Display_BCD(STATE_NUM)
+	Set_Cursor(1,1)
+    Display_BCD(STATE_NUM)
 
-	; Set_Cursor(2,1)
-    ; Display_BCD(BCD_Counter)
-	; Set_Cursor(2,5)
-	; Display_BCD(Resulting_Counter)
+	Set_Cursor(2,1)
+    Display_BCD(BCD_Counter)
+	Set_Cursor(2,5)
+	Display_BCD(Resulting_Counter)
 
-	; lcall Display_SpeakerFlag
-	; lcall Display_BelowFlag
-
-	; LCALL Display_Output_Voltage
-
+	lcall Display_SpeakerFlag
+	lcall Display_BelowFlag
 	RET
 
 Check_Buttons:
@@ -265,6 +259,7 @@ Reset_Vars:
 	setb TENS_BUTTON
 	setb ONES_BUTTON
 	setb MODE_BUTTON
+    setb Alarm_En_Flag
 	CLR Below_Temp_Flag
 	CLR Error_Triggered_Flag
 
@@ -275,7 +270,7 @@ Timer0_ISR:
     PUSH ACC
 	PUSH PSW
 
-	
+	jb Speaker_En_Flag, return0
 	CLR TR0
 	MOV TH0, #HIGH(TIMER0_RELOAD)
 	MOV TL0, #LOW(TIMER0_RELOAD)
@@ -284,7 +279,7 @@ Timer0_ISR:
 	CPL SPEAKER_OUT ; Toggle the Alarm Out Pin
 	POP PSW
 	POP ACC
-
+return0:
 	RETI
 ;-------------;
 ; Timer 2 ISR ;
@@ -588,3 +583,56 @@ Forever:
 	LJMP Forever
 
 END
+
+inc:
+    MOV A, Count1ms+0
+    CJNE A, #LOW(1000), done1
+    lcall done1
+    
+	MOV A, Count1ms+1
+	CJNE A, #HIGH(1000), done2
+
+    speaker_counts
+
+done1: ; if not 1s
+    mov speaker_counter1ms+0, A
+    ljmp Timer2_ISR_Done
+
+done2:    
+    mov speaker_counter1ms+1, A
+    ljmp Timer2_ISR_Done
+
+
+; to be called in each state change
+; initially, flag = 1, ALARM IS ON, declared in MAIN !
+alarm_function:
+    ;match speakcounter with 1ms_count
+    mov a, Count1ms+0
+    mov speaker_counter1ms+0, a
+    mov a, Count1ms+1
+    mov speaker_counter1ms+1, a
+
+    mov a, speaker_counter1ms+0
+    cjne a, #LOW(999), do_nothing
+    mov a, speaker_counter1ms+1
+    cjne a, #HIGH(999), do_nothing
+    ;if a second has passed, inc the speaker counter
+    inc speaker_counts  ;possibly move to accumulator to avoid any errors
+
+    mov a, speaker_counts
+    cjne a, #0x02, do_nothing
+    cpl Alarm_En_Flag
+    mov speaker_counts, #0  ; if 2s has passed, reset the counter (i.e. stop beeping)
+
+    ret
+do_nothing:
+    ret
+
+since speaker count resets AFTER 2 seconds, 
+it SHOULD NOT be incremented UNTIl
+the next STATE TRANSITION. 
+OTHERWISE, it'll repeat indefinitely regardless of time
+
+How to achieve this 
+"it SHOULD NOT be incremented UNTIl
+the next STATE TRANSITION"
