@@ -16,7 +16,7 @@ $LIST
 ;            PWM5/IC7/SS/P1.5 -|10   11|- P1.4/SDA/FB/PWM1
 ;                               -------
 ;
-; 2 3 4 7 9 19 18 17 16 12 11 15 10 6 5 14 
+; 2 3 4 7 9 19 18 17 16 12 11 15 10 6 5 14
 ;-------------------;
 ; Clock Frequencies ;
 ;-------------------;
@@ -41,7 +41,7 @@ START_BUTTON 	  EQU P0.4 ; Pin 20
 MODE_BUTTON       EQU P1.0 ; Pin 15
 
 TENS_BUTTON       EQU P1.2 ; Pin 13
-ONES_BUTTON       EQU P1.6 ; Pin 8 
+ONES_BUTTON       EQU P1.6 ; Pin 8
 
 OUTPUT_PIN 	      EQU P1.5 ; Pin 10
 
@@ -143,8 +143,8 @@ Initial_Message2:  db 'sxxx.00 rxxx.00 ', 0
 
 CSEG
 
-Tc_MSG: DB 'Tc=', 0
-Tj_MSG: DB 'Tj=', 0
+To_MSG: DB 'To=', 0
+Tj_MSG: DB 'C  Tj=', 0
 
 LCD_RS EQU P1.3 ; Pin 12
 LCD_E  EQU P1.4 ; Pin 11
@@ -162,7 +162,7 @@ Display_LCD:
 	lcall Display_Soak_Temperature
 
 	Set_Cursor(1, 1)
-	Send_Constant_String(#Tc_MSG)
+	Send_Constant_String(#To_MSG)
 
 	Set_Cursor(1, 10)
 	Send_Constant_String(#Tj_MSG)
@@ -172,6 +172,36 @@ Display_LCD:
 
 	Set_Cursor(2, 5)
 	Display_char(#'r')
+
+	RET
+
+Display_LCDFinal:
+	lcall Display_LM335_Temperature
+	lcall Display_Oven_Temperature
+
+	Set_Cursor(1,1)
+    Send_Constant_String(#To_MSG)
+
+	Set_Cursor(1,7)
+    Send_Constant_String(#Tj_MSG)
+
+	Set_Cursor(1,15)
+	Display_char(#'C')
+
+	lcall Display_Reflow_Temperature
+	lcall Display_Soak_Temperature
+
+	Set_Cursor(2,1)
+	Display_char(#'s')
+
+	Set_Cursor(2,9)
+	Display_char(#'r')
+
+	Set_Cursor(2,5)
+	Display_char(#'C')
+
+	Set_Cursor(2,13)
+	Display_char(#'C')
 
 	RET
 
@@ -228,10 +258,10 @@ reflowaddone:
 done_check_button:
 	mov a, TEMP_REFLOW
 	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
-	jnc done_reflow_and_soak_temp_check ; 
+	jnc done_reflow_and_soak_temp_check ;
 	mov a, TEMP_REFLOW
 	mov TEMP_SOAK, a
-done_reflow_and_soak_temp_check:	
+done_reflow_and_soak_temp_check:
 	ret
 
 Init_Vars:
@@ -275,7 +305,7 @@ Timer0_ISR:
     PUSH ACC
 	PUSH PSW
 
-	
+
 	CLR TR0
 	MOV TH0, #HIGH(TIMER0_RELOAD)
 	MOV TL0, #LOW(TIMER0_RELOAD)
@@ -303,7 +333,7 @@ Timer2_ISR:
 	JNZ Inc_Done
 	INC Count1ms+1
 Inc_Done:
-	
+
 	MOV A, Timer_State
 	CJNE A, #0x01, Continue ; Jump If Not In Timer State
 	LCALL Inc_PWM
@@ -338,7 +368,7 @@ Continue:
 Check_Error_State:
 	; Check If Oven Temperature < 50
 	LCALL Check_Temp_Error
-	JNB Error_Triggered_Flag, Timer2_ISR_Done ; Skip If Oven Temperature <= 50	
+	JNB Error_Triggered_Flag, Timer2_ISR_Done ; Skip If Oven Temperature <= 50
 Error_State_Triggered:
 	;CLR Error_Triggered_Flag
 	MOV STATE_NUM, #0x00
@@ -411,7 +441,7 @@ State0:
 	LCALL Wait30ms
 	JB START_BUTTON, Quit0
 
-	
+
 	JNB START_BUTTON, $ ; Go to State1 If Start Button is Pressed
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
@@ -423,7 +453,7 @@ Quit0:
 State1:
     MOV Timer_State, #0x01
     LCALL Power100
-	
+
 	MOV R1, TEMP_SOAK
 	LCALL Check_Temp_Oven ; Check If Oven Temperature Reaches 150
 	JB Below_Temp_Flag, Quit1 ; If Temperature Below then jump to quit1
@@ -438,7 +468,7 @@ Quit1:
 State2:
     LCALL Power20 ; Set Power to 20%
     MOV Timer_State, #0x01
-    
+
 Quit2:
 	RET
 
@@ -449,8 +479,8 @@ State3:
 	MOV R1, TEMP_REFLOW
 	LCALL Check_Temp_Oven
 	JB Below_Temp_Flag, Quit3
-	
-	;CLR Below_Temp_Flag	
+
+	;CLR Below_Temp_Flag
     MOV Timer_State, #0x01
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
@@ -578,6 +608,7 @@ Forever:
 	LCALL Get_and_Transmit_Temp
 	LCALL Display_LCDTest
 	;LCALL Display_LCD
+	; lcall Display_LCDFinal
 	LCALL StateChanges
 
 	LJMP Forever

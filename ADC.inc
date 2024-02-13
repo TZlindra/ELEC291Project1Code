@@ -95,9 +95,9 @@ Get_LM335_TEMP:
 	LCALL Convert_Voltage
 Calculate_LM335_TEMP:
     Load_y(27300)
-    LCALL sub32	
+    LCALL sub32
     Load_y(10)
-    LCALL mul32	
+    LCALL mul32
 
 	; Save Result to Use Later.
 	MOV LM335_TEMP+0, X+0
@@ -124,7 +124,7 @@ Calculate_THERMOCOUPLE_TEMP:
 	LCALL mul32
 	Load_y(12424)
 	LCALL div32
-	Load_y(100) 
+	Load_y(100)
 	LCALL mul32
 
 	; Save Result to Use Later.
@@ -162,7 +162,7 @@ Get_LM335_Temperature_BCD:
 	MOV X+3, LM335_TEMP+3
 
 	LCALL hex2BCD
-	
+
 	RET
 
 Get_Thermocouple_Temperature_BCD:
@@ -172,17 +172,16 @@ Get_Thermocouple_Temperature_BCD:
 	MOV X+3, THERMOCOUPLE_TEMP+3
 
 	LCALL hex2BCD
-	
+
 	RET
 
 Display_LM335_Temperature:
 	LCALL Get_LM335_Temperature_BCD
 
-	Set_Cursor(1, 10)
+	Set_Cursor(1, 12)
 	Display_BCD(BCD+2)
 	Display_BCD(BCD+1)
-	Display_BCD(BCD+0)
-	
+
 	RET
 
 Display_Thermocouple_Temperature:
@@ -191,7 +190,7 @@ Display_Thermocouple_Temperature:
 	Set_Cursor(2, 1)
 	Display_BCD(BCD+2)
 	Display_BCD(BCD+1)
-	
+
 	RET
 
 Display_Oven_Temperature:
@@ -229,7 +228,7 @@ Display_Soak_Temperature:
 	MOV X+3, #0
 
 	LCALL hex2BCD
-	Set_Cursor(2, 2)
+	Set_Cursor(2, 1)
 	Display_BCD(BCD+1)
 	Display_BCD(BCD+0)
 
@@ -242,7 +241,7 @@ Display_Reflow_Temperature:
 	MOV X+3, #0
 
 	LCALL hex2BCD
-	Set_Cursor(2, 10)
+	Set_Cursor(2, 9)
 	Display_BCD(BCD+1)
 	Display_BCD(BCD+0)
 
@@ -262,8 +261,8 @@ Write_Oven_BCD:
 	MOV X+3, #0
 
 	LCALL hex2BCD
-	MOV OVEN_BCD+1, BCD+1 
-	MOV OVEN_BCD+0, BCD+0 
+	MOV OVEN_BCD+1, BCD+1
+	MOV OVEN_BCD+0, BCD+0
 
 	RET
 
@@ -273,7 +272,7 @@ Get_and_Transmit_Temp:
 	LCALL Get_Thermocouple_TEMP
 	LCALL Add_Temp_Oven
 	LCALL Write_Oven_BCD
-Get_and_Transmit_Temp_Done:	
+Get_and_Transmit_Temp_Done:
 	RET
 
 Check_Temp_Oven:

@@ -12,7 +12,7 @@ CARRIAGE_RETURN:
 ; Display a BCD number in the LCD ;
 ;---------------------------------;
 
-?PutChar:
+PutChar:
     SJMP Wait_TI
 Wait_TI:
     JNB TI, Wait_TI
@@ -30,7 +30,7 @@ ENDMAC
     MOVC A, @A+DPTR
     JZ ?Send_NewLine_Done
 
-    LCALL ?PutChar
+    LCALL PutChar
     INC DPTR
     SJMP ?Send_NewLine
 ?Send_NewLine_Done:
@@ -51,14 +51,21 @@ Write_MostSigDig:
 	SWAP A
 	ANL A, #0FH
 	ORL A, #30H
-	LCALL ?PutChar
+	LCALL PutChar
 Write_LeastSigDig:
 	; Write Least Significant Digit
 	MOV A, R0
 	ANL A, #0FH
 	ORL A, #30H
-	LCALL ?PutChar
+	LCALL PutChar
 	POP ACC
 	RET
 
+TX_StateNumber :
+	MOV A, #'S'
+ 	LCALL PutChar
+ 	Send_BCD(STATE_NUM)
+    Send_NewLine(#CARRIAGE_RETURN)
+
+	RET
 $LIST
