@@ -16,7 +16,7 @@ $LIST
 ;            PWM5/IC7/SS/P1.5 -|10   11|- P1.4/SDA/FB/PWM1
 ;                               -------
 ;
-; 2 3 4 7 9 19 18 17 16 12 11 15 10 6 5 14 
+; 2 3 4 7 9 19 18 17 16 12 11 15 10 6 5 14
 ;-------------------;
 ; Clock Frequencies ;
 ;-------------------;
@@ -41,7 +41,7 @@ START_BUTTON 	  EQU P0.4 ; Pin 20
 MODE_BUTTON       EQU P1.0 ; Pin 15
 
 TENS_BUTTON       EQU P1.2 ; Pin 13
-ONES_BUTTON       EQU P1.6 ; Pin 8 
+ONES_BUTTON       EQU P1.6 ; Pin 8
 
 OUTPUT_PIN 	      EQU P1.5 ; Pin 10
 
@@ -111,13 +111,15 @@ X:   DS 4
 Y:   DS 4
 BCD: DS 5
 
-OVEN_BCD: DS 2
+OVEN_BCD: DS 4
 
+Output_Voltage: DS 4
 VLED_ADC: DS 2
 
-LM335_TEMP: DS 2 ; 2 Byte Temperature Value With 0.01 Degree Resolution
-THERMOCOUPLE_TEMP: DS 2 ; 2 Byte Temperature Value With 0.01 Degree Resolution
+LM335_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
+THERMOCOUPLE_TEMP: DS 4 ; 2 Byte Temperature Value With 0.01 Degree Resolution
 OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
+
 
 BSEG
 MF: DBIT 1
@@ -126,6 +128,8 @@ Below_Temp_Flag: DBIT 1
 Error_Triggered_Flag: DBIT 1
 
 Speaker_En_Flag:   DBIT 1
+
+State_TX_Flag: 		dbit 1
 
 $NOLIST
 $include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
@@ -141,6 +145,9 @@ Initial_Message2:  db 'sxxx.00 rxxx.00 ', 0
 
 CSEG
 
+To_MSG: DB 'To=', 0
+Tj_MSG: DB 'C  Tj=', 0
+
 LCD_RS EQU P1.3 ; Pin 12
 LCD_E  EQU P1.4 ; Pin 11
 LCD_D4 EQU P0.0 ; Pin 16
@@ -148,45 +155,42 @@ LCD_D5 EQU P0.1 ; Pin 15
 LCD_D6 EQU P0.2 ; Pin 18
 LCD_D7 EQU P0.3 ; Pin 19
 
-Speaker:
-; Increment 16-bit 1ms Counter.
-	INC speaker_counter1ms+0 ; Increment Low 8-bits
-	MOV a, speaker_counter1ms+0 ; Increment High 8-bits if Lower 8-bits Overflow
-	JNZ Dont_Increment_Byte1
-	INC speaker_counter1ms+1
-Dont_Increment_Byte1:
-	; Check If oNE Second Has Passed
-	MOV A, speaker_counter1ms+0
-	CJNE A, #LOW(500), return_speaker
-	MOV A, speaker_counter1ms+1
-	CJNE A, #HIGH(500), return_speaker
-
-	CLR A
-	MOV speaker_counter1ms+0, A
-	MOV speaker_counter1ms+1, A
-
-	cpl Speaker_En_Flag
-	inc speaker_counts
-
-	mov a, speaker_counts
-	cjne a, #0x04, return_speaker
-	mov speaker_counts, #0x00
-	clr Speaker_En_Flag
-return_speaker:
-	ret
-
-Display_LCD:
-	Set_Cursor(1,1)
-    Display_BCD(STATE_NUM)
+Display_LCDFinal:
 	lcall Display_LM335_Temperature
 	lcall Display_Oven_Temperature
+
+	Set_Cursor(1,1)
+    Send_Constant_String(#To_MSG)
+
+	Set_Cursor(1,7)
+    Send_Constant_String(#Tj_MSG)
+
+	Set_Cursor(1,15)
+	Display_char(#'C')
+
 	lcall Display_Reflow_Temperature
 	lcall Display_Soak_Temperature
+
+	Set_Cursor(2,1)
+	Display_char(#'s')
+
+	Set_Cursor(2,9)
+	Display_char(#'r')
+
+	Set_Cursor(2,5)
+	Display_char(#'C')
+
+	Set_Cursor(2,13)
+	Display_char(#'C')
+
+	Set_Cursor(2,15)
+    Display_BCD(STATE_NUM)
 
 	RET
 
 Display_LCDTest:
 	lcall Display_LM335_Temperature
+	; lcall Display_Thermocouple_Temperature
 	lcall Display_Oven_Temperature
 
 	Set_Cursor(1,1)
@@ -197,8 +201,10 @@ Display_LCDTest:
 	Set_Cursor(2,5)
 	Display_BCD(Resulting_Counter)
 
-	lcall Display_SpeakerFlag
+	; lcall Display_SpeakerFlag
 	lcall Display_BelowFlag
+
+	; LCALL Display_Output_Voltage
 
 	RET
 
@@ -235,10 +241,10 @@ reflowaddone:
 done_check_button:
 	mov a, TEMP_REFLOW
 	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
-	jnc done_reflow_and_soak_temp_check ; 
+	jnc done_reflow_and_soak_temp_check ;
 	mov a, TEMP_REFLOW
 	mov TEMP_SOAK, a
-done_reflow_and_soak_temp_check:	
+done_reflow_and_soak_temp_check:
 	ret
 
 Init_Vars:
@@ -257,18 +263,23 @@ Init_Vars:
 
 	MOV THERMOCOUPLE_TEMP+0, #0
 	MOV THERMOCOUPLE_TEMP+1, #0
+
+	setb State_TX_Flag
 Reset_Vars:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x00
     MOV Desired_PWM+0, #0x00
     MOV Desired_PWM+1, #0x00
 
-    SETB OUTPUT_PIN
+	mov speaker_counts, #0x00
+	mov speaker_counter1ms, #0x00
+	mov speaker_counter1ms+1, #0x00
+
+    clr OUTPUT_PIN
 	SETB START_BUTTON
 	setb TENS_BUTTON
 	setb ONES_BUTTON
 	setb MODE_BUTTON
-	clr Speaker_En_Flag
 	CLR Below_Temp_Flag
 	CLR Error_Triggered_Flag
 
@@ -279,22 +290,13 @@ Timer0_ISR:
     PUSH ACC
 	PUSH PSW
 
-	JNB Speaker_En_Flag, No_Sound
-Generate_Sound:
-	CLR TR0 ; Stop Timer 0.
-	; Timer 0 Doesn't Have 16-Bit Auto-Reload.
+
+	CLR TR0
 	MOV TH0, #HIGH(TIMER0_RELOAD)
 	MOV TL0, #LOW(TIMER0_RELOAD)
 	SETB TR0
 
 	CPL SPEAKER_OUT ; Toggle the Alarm Out Pin
-	SJMP Timer0_ISR_Done
-No_Sound:
-	; Timer 0 Doesn't Have 16-Bit Auto-Reload.
-	MOV TH0, #HIGH(TIMER0_RELOAD)
-	MOV TL0, #LOW(TIMER0_RELOAD)
-Timer0_ISR_Done:
-	; Restore Registers from Stack.
 	POP PSW
 	POP ACC
 
@@ -316,7 +318,7 @@ Timer2_ISR:
 	JNZ Inc_Done
 	INC Count1ms+1
 Inc_Done:
-	;lcall Speaker
+
 	MOV A, Timer_State
 	CJNE A, #0x01, Continue ; Jump If Not In Timer State
 	LCALL Inc_PWM
@@ -332,6 +334,8 @@ Continue:
 	MOV Count1ms+0, A
 	MOV Count1ms+1, A
 	; Increment the BCD counter
+
+	cpl TR0
 	MOV A, BCD_Counter
 	ADD A, #0x01
 	DA A
@@ -349,15 +353,16 @@ Continue:
 Check_Error_State:
 	; Check If Oven Temperature < 50
 	LCALL Check_Temp_Error
-	JNB Error_Triggered_Flag, Timer2_ISR_Done ; Skip If Oven Temperature <= 50	
+	JNB Error_Triggered_Flag, Timer2_ISR_Done ; Skip If Oven Temperature <= 50
 Error_State_Triggered:
 	;CLR Error_Triggered_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
-
+	setb State_TX_Flag
 	LJMP Timer2_ISR_Done
 OtherStates:
 	MOV BCD_Counter, #0x00
+	setb State_TX_Flag
 	INC STATE_NUM ; Increment State Number
 Timer2_ISR_Done:
 	POP PSW
@@ -372,7 +377,7 @@ W3: MOV R1, #200
 W2: MOV R0, #104
 W1: djnz R0, W1 ; 4 cycles-> 4 * 60.285ns * 104 = 25us
     djnz R1, W2 ; 25us * 200 = 5.0ms
-    djnz R2, W3 ; 5.0ms * 6 = 50ms (Approximately)
+    djnz R2, W3 ; 5.0ms * 6 = 30ms (Approximately)
     RET
 
 StateChanges: ; Check What Counter Number Will Be For Each State
@@ -413,49 +418,47 @@ Done_State_Counter:
 	RET
 
 State0:
+
     MOV Timer_State, #0x00
     LCALL Power0
-	; LCALL Check_Buttons
+	LCALL Check_Buttons
 
 	JB START_BUTTON, Quit0 ; Go to Quit0 If Start Button is NOT Pressed
 	LCALL Wait30ms
 	JB START_BUTTON, Quit0
 
-	
+
 	JNB START_BUTTON, $ ; Go to State1 If Start Button is Pressed
 	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x06
+	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
-	setb Speaker_En_Flag
+	setb State_TX_Flag
+	;setb TR0
 Quit0:
 	RET
 
 State1:
     MOV Timer_State, #0x01
     LCALL Power100
-	
+
+
 	MOV R1, TEMP_SOAK
 	LCALL Check_Temp_Oven ; Check If Oven Temperature Reaches 150
 	JB Below_Temp_Flag, Quit1 ; If Temperature Below then jump to quit1
 
 	;CLR Below_Temp_Flag
 	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x06
+	MOV Resulting_Counter, #0x90
 	INC STATE_NUM
-	setb Speaker_En_Flag
+	setb State_TX_Flag
 Quit1:
 	RET
 
 State2:
     LCALL Power20 ; Set Power to 20%
     MOV Timer_State, #0x01
-    JB START_BUTTON, Quit2 ; Go to Quit2 If Start Button is NOT Pressed
-	LCALL Wait30ms
-	JB START_BUTTON, Quit2
 
-	JNB START_BUTTON, $ ; Go to State3 If Start Button is Pressed
-    MOV Timer_State, #0x00
-	setb Speaker_En_Flag
+
 Quit2:
 	RET
 
@@ -463,22 +466,24 @@ State3:
     LCALL Power100 ; Set Power to 100%
     MOV Timer_State, #0x00
 
+
 	MOV R1, TEMP_REFLOW
 	LCALL Check_Temp_Oven
 	JB Below_Temp_Flag, Quit3
-	
-	;CLR Below_Temp_Flag	
+
+	;CLR Below_Temp_Flag
     MOV Timer_State, #0x01
 	MOV BCD_Counter, #0x00
-	MOV Resulting_Counter, #0x07
+	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
-	setb Speaker_En_Flag
+	setb State_TX_Flag
 Quit3:
 	RET
 
 State4:
     LCALL Power20
     MOV Timer_State, #0x01
+
     ;JB START_BUTTON, Quit4 ; if START BUTTON is NOT PRESSED
 	;LCALL Wait30ms
 	;JB START_BUTTON, Quit4
@@ -499,7 +504,7 @@ State5:
 	CLR Below_Temp_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
-	setb Speaker_En_Flag
+	setb State_TX_Flag
 Quit5:
 	RET
 
@@ -520,7 +525,6 @@ Init_All:
 	Send_Constant_String(#Initial_Message1)
 	Set_Cursor(2,1)
 	Send_Constant_String(#Initial_Message2)
-
 	LCALL Init_Vars
 Init_SerialPort:
     ; Configure Serial Port and Baud Rate
@@ -545,7 +549,7 @@ Timer0_Init:
 
 	; Enable Timer and Interrupts
     SETB ET0  ; Enable Timer 0 Interrupt
-	setb TR0  ; Start Timer 0
+	setb TR0
 Init_Timer1:
 	ORL	CKCON, #0X10 ; CLK is Input for Timer 1.
 	ORL	PCON, #0X80 ; Bit SMOD = 1, Double Baud Rate
@@ -595,9 +599,13 @@ Main:
 	LCALL LCD_4BIT
 Forever:
 	LCALL Get_and_Transmit_Temp
-	LCALL Display_LCDTest
+	;LCALL Display_LCDTest
 	;LCALL Display_LCD
+	lcall Display_LCDFinal
 	LCALL StateChanges
+	LCALL TX_StateNumber
+
+	clr State_TX_Flag
 
 	LJMP Forever
 
