@@ -62,10 +62,14 @@ Write_LeastSigDig:
 	RET
 
 TX_StateNumber :
+	JB State_TX_Flag, TX_StateNumber_Continue
+	LJMP TX_StateNumber_End
+TX_StateNumber_Continue:
+	CLR State_TX_Flag
 	MOV A, #'S'
  	LCALL PutChar
  	Send_BCD(STATE_NUM)
     Send_NewLine(#CARRIAGE_RETURN)
-
+TX_StateNumber_End:
 	RET
 $LIST

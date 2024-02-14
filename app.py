@@ -51,11 +51,11 @@ class StripChart:
         self.fig = plt.figure()
 
         self.ax = self.fig.add_subplot(111)
-        self.ax.set_title('Temperature Strip-Chart')
+        self.ax.set_title('Temperature Strip-Chart - State 0')
 
         self.xlim = xlim
         self.ax.set_xlim(0, self.xlim)
-        self.ax.set_xlabel('Time (s)')
+        self.ax.set_xlabel('Samples')
 
         self.ax.set_ylim(0, 300)
         self.ax.set_ylabel('Temperature (C)')
@@ -75,14 +75,13 @@ class StripChart:
 
     def read_serial(self) :
         if self.conn is not None :
-            print(self.conn.readline().decode('utf-8'))
             return self.conn.readline().decode('utf-8').strip('\r\n')
         else :
             return None
 
     def return_state(self, rx_data):
-        states = ['S00', 'S01', 'S02', 'S03', 'S04', 'S05']
-        if rx_data in states:
+        states = ['S00', 'S01', 'S02', 'S03', 'S04', 'S5']
+        if (rx_data in states) :
             return int(rx_data[-1])
         else:
             return -1
@@ -96,21 +95,22 @@ class StripChart:
             if rx_data is not None :
                 try :
                     self.current_val = float(rx_data) # Check if Temperature
+                    print(f'Current Temperature: {self.current_val}')
                 except (TypeError, ValueError, UnicodeDecodeError) :
-                    try :
-                        self.current_state = self.return_state(rx_data)
-                        print(f"State: {self.current_state}")
-                        # Debug Rx Data
-                        print(rx_data)
-                    except (TypeError, ValueError, UnicodeDecodeError) :
-                        print("Error Reading Temperature From Serial Port!")
+                    if self.current_state != self.return_state(rx_data) :
+                        if self.return_state(rx_data) != -1 :
+                            self.current_state = self.return_state(rx_data)
+                            print(f'Current State: {self.current_state}')
+                            self.ax.set_title('Temperature Strip-Chart - State ' + str(self.current_state))
+                        else :
+                            print("Error Reading Temperature From Serial Port!")
                 finally :
                     val = self.current_val
-                current_time = dt.datetime.now().strftime('%H:%M:%S')
+                current_time = dt.datetime.now().strftime('%H:%M:%S.%f')
             yield t, val, current_time
 
     def run(self, data):
-        time.sleep(1)
+        # time.sleep(1)
         t, y, current_time = data
         if t > -1 :
             self.x_data.append(t)

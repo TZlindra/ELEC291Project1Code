@@ -151,7 +151,9 @@ Add_Temp_Oven:
 	Load_y(1000)
 	LCALL div32
 
-	MOV OVEN_TEMP, X+0
+	MOV A, X+0
+	SUBB A, #2
+	MOV OVEN_TEMP, A
 
 	RET
 
@@ -199,7 +201,7 @@ Display_Oven_Temperature:
 	SUBB A, #100
 	JC Display_Oven_Temperature_2Digits
 Display_Oven_Temperature_3Digits:
-	Set_Cursor(1, 4)
+	Set_Cursor(1, 3)
  	Display_BCD(OVEN_BCD+1)
  	Display_BCD(OVEN_BCD+0)
 	RET

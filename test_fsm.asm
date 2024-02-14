@@ -129,6 +129,8 @@ Error_Triggered_Flag: DBIT 1
 
 Speaker_En_Flag:   DBIT 1
 
+State_TX_Flag: 		dbit 1
+
 $NOLIST
 $include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
 $include(Serial.INC) ; Library of Serial Port Related Functions and Utility Macros
@@ -152,28 +154,6 @@ LCD_D4 EQU P0.0 ; Pin 16
 LCD_D5 EQU P0.1 ; Pin 15
 LCD_D6 EQU P0.2 ; Pin 18
 LCD_D7 EQU P0.3 ; Pin 19
-
-Display_LCD:
-	Set_Cursor(1,1)
-    Display_BCD(STATE_NUM)
-	lcall Display_LM335_Temperature
-	lcall Display_Oven_Temperature
-	lcall Display_Reflow_Temperature
-	lcall Display_Soak_Temperature
-
-	Set_Cursor(1, 1)
-	Send_Constant_String(#To_MSG)
-
-	Set_Cursor(1, 10)
-	Send_Constant_String(#Tj_MSG)
-
-	Set_Cursor(2, 1)
-	Display_char(#'s')
-
-	Set_Cursor(2, 5)
-	Display_char(#'r')
-
-	RET
 
 Display_LCDFinal:
 	lcall Display_LM335_Temperature
@@ -202,6 +182,9 @@ Display_LCDFinal:
 
 	Set_Cursor(2,13)
 	Display_char(#'C')
+
+	Set_Cursor(2,15)
+    Display_BCD(STATE_NUM)
 
 	RET
 
@@ -280,6 +263,8 @@ Init_Vars:
 
 	MOV THERMOCOUPLE_TEMP+0, #0
 	MOV THERMOCOUPLE_TEMP+1, #0
+
+	setb State_TX_Flag
 Reset_Vars:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x00
@@ -373,10 +358,11 @@ Error_State_Triggered:
 	;CLR Error_Triggered_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
-
+	setb State_TX_Flag
 	LJMP Timer2_ISR_Done
 OtherStates:
 	MOV BCD_Counter, #0x00
+	setb State_TX_Flag
 	INC STATE_NUM ; Increment State Number
 Timer2_ISR_Done:
 	POP PSW
@@ -446,6 +432,7 @@ State0:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
+	setb State_TX_Flag
 	;setb TR0
 Quit0:
 	RET
@@ -453,6 +440,7 @@ Quit0:
 State1:
     MOV Timer_State, #0x01
     LCALL Power100
+
 
 	MOV R1, TEMP_SOAK
 	LCALL Check_Temp_Oven ; Check If Oven Temperature Reaches 150
@@ -462,6 +450,7 @@ State1:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x90
 	INC STATE_NUM
+	setb State_TX_Flag
 Quit1:
 	RET
 
@@ -469,12 +458,14 @@ State2:
     LCALL Power20 ; Set Power to 20%
     MOV Timer_State, #0x01
 
+
 Quit2:
 	RET
 
 State3:
     LCALL Power100 ; Set Power to 100%
     MOV Timer_State, #0x00
+
 
 	MOV R1, TEMP_REFLOW
 	LCALL Check_Temp_Oven
@@ -485,12 +476,14 @@ State3:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
+	setb State_TX_Flag
 Quit3:
 	RET
 
 State4:
     LCALL Power20
     MOV Timer_State, #0x01
+
     ;JB START_BUTTON, Quit4 ; if START BUTTON is NOT PRESSED
 	;LCALL Wait30ms
 	;JB START_BUTTON, Quit4
@@ -511,6 +504,7 @@ State5:
 	CLR Below_Temp_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
+	setb State_TX_Flag
 Quit5:
 	RET
 
@@ -531,7 +525,6 @@ Init_All:
 	Send_Constant_String(#Initial_Message1)
 	Set_Cursor(2,1)
 	Send_Constant_String(#Initial_Message2)
-
 	LCALL Init_Vars
 Init_SerialPort:
     ; Configure Serial Port and Baud Rate
@@ -606,11 +599,13 @@ Main:
 	LCALL LCD_4BIT
 Forever:
 	LCALL Get_and_Transmit_Temp
-	LCALL Display_LCDTest
+	;LCALL Display_LCDTest
 	;LCALL Display_LCD
-	; lcall Display_LCDFinal
+	lcall Display_LCDFinal
 	LCALL StateChanges
 	LCALL TX_StateNumber
+
+	clr State_TX_Flag
 
 	LJMP Forever
 

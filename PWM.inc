@@ -29,8 +29,8 @@ Power100: ; Called From States
     RET
 
 Power20: ; called from states
-    MOV Desired_PWM+0, #LOW(400) ; 40% Power
-    MOV Desired_PWM+1, #HIGH(400)
+    MOV Desired_PWM+0, #LOW(300) ; 30% Power
+    MOV Desired_PWM+1, #HIGH(300)
 
     RET
 
