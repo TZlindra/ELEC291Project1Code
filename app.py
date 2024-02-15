@@ -18,7 +18,7 @@ from tkinter import ttk
 import serial
 import sys
 
-# from server_comm import *
+from Uploading import *
 
 ###############
 ### Classes ###
@@ -99,7 +99,6 @@ class StripChart:
             if rx_data is not None :
                 try :
                     self.current_val = float(rx_data) # Check if Temperature
-                    # server_comm.send(self.current_val)
                     print(f'Current Temperature: {self.current_val}')
                 except (TypeError, ValueError, UnicodeDecodeError) :
                     if self.current_state != self.return_state(rx_data) :
@@ -157,6 +156,8 @@ class StripChart:
 
             print(f"Data Exported to {csv_path}\n\nData Preview:\n")
             display(csv_df.head(2))
+            upload_to_bucket(F'LogBook/{csv_path}', os.path.join(os.getcwd(), csv_path), 'kys_data_bucket')
+            print(f"Data Uploaded to Google Cloud Storage")
 
 class App :
     def __init__(self) :

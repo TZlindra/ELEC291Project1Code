@@ -28,9 +28,15 @@ Power100: ; Called From States
     setb OUTPUT_PIN
     RET
 
-Power20: ; called from states
+Power30: ; called from states
     MOV Desired_PWM+0, #LOW(300) ; 30% Power
     MOV Desired_PWM+1, #HIGH(300)
+
+    RET
+
+Power60: ; called from states
+    MOV Desired_PWM+0, #LOW(600) ; 60% Power
+    MOV Desired_PWM+1, #HIGH(600)
 
     RET
 
