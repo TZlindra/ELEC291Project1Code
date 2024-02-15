@@ -32,17 +32,22 @@ TIMER1_RELOAD     EQU (0X100 - (CLK / (16 * BAUD)))
 TIMER2_RATE       EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD     EQU ((65536- (CLK/TIMER2_RATE)))
 
+
 ;-------------------;
 ;- Pin Definitions -;
 ;-------------------;
 
 ; ToDo : Button Multiplexer
 START_BUTTON 	  EQU P0.4 ; Pin 20
-MODE_BUTTON       EQU P1.0 ; Pin 15
+MODE_BUTTON       EQU P0.3 ; Pin 19
 
-TENS_BUTTON       EQU P1.2 ; Pin 13
-ONES_BUTTON       EQU P1.6 ; Pin 8
+TENS_BUTTON_PLUS       EQU P1.3 ; Pin 12
+ONES_BUTTON_PLUS       EQU P0.0 ; Pin 16
 
+TENS_BUTTON_MINUS       EQU P0.1 ; Pin 17
+ONES_BUTTON_MINUS       EQU P0.2 ; Pin 18
+
+MX_PIN            EQU P1.6 ; Pin 8
 OUTPUT_PIN 	      EQU P1.5 ; Pin 10
 
 REF_ADC           EQU P1.7 ; Pin 6
@@ -56,6 +61,7 @@ ORG 0x0000
 
 ; External interrupt 0 vector (not used in this code)
 ORG 0x0003
+
 	RETI
 
 ; Timer/Counter 0 overflow interrupt vector
@@ -77,6 +83,11 @@ ORG 0x0023
 ; Timer/Counter 2 overflow interrupt vector
 ORG 0x002B
 	LJMP Timer2_ISR
+
+
+st:     db 'ST', 0
+rt:     db 'RT', 0
+
 
 DSEG AT 0x30
 
@@ -128,8 +139,19 @@ Below_Temp_Flag: DBIT 1
 Error_Triggered_Flag: DBIT 1
 
 Speaker_En_Flag:   DBIT 1
+Reflow_Soak_Flag:   DBIT 1
+State_TX_Flag: DBIT 1
 
-State_TX_Flag: 		dbit 1
+Second_Flag:  DBIT 1
+Emergency_Flag:  DBIT 1
+
+BTP: dbit 1 ;Multiplex buttons
+BOP: dbit 1
+BTM: dbit 1
+BOM: dbit 1
+BMode: dbit 1
+Mode: dbit 1
+
 
 $NOLIST
 $include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
@@ -172,20 +194,29 @@ Display_LCDFinal:
 	lcall Display_Soak_Temperature
 
 	Set_Cursor(2,1)
-	Display_char(#'s')
+	Display_char(#'S')
 
-	Set_Cursor(2,9)
-	Display_char(#'r')
+	Set_Cursor(2,7)
+	Display_char(#'R')
 
 	Set_Cursor(2,5)
 	Display_char(#'C')
 
-	Set_Cursor(2,13)
+	Set_Cursor(2,11)
 	Display_char(#'C')
 
 	Set_Cursor(2,15)
     Display_BCD(STATE_NUM)
 
+	jnb Mode, Display_Soak
+Display_Reflow:
+	Set_Cursor(2, 13)
+	Display_char(#'R')
+	SJMP Display_Mode_Done
+Display_Soak:
+	Set_Cursor(2, 13)
+	Display_char(#'S')
+Display_Mode_Done:
 	RET
 
 Display_LCDTest:
@@ -202,50 +233,298 @@ Display_LCDTest:
 	Display_BCD(Resulting_Counter)
 
 	; lcall Display_SpeakerFlag
-	lcall Display_BelowFlag
+	; lcall Display_BelowFlag
 
 	; LCALL Display_Output_Voltage
 
 	RET
 
+; Display_SetTemp:
+
+; 	;mov a, TEMP_SOAK
+; 	; Set_Cursor(2,9)
+; 	clr a
+; 	mov x+0, TEMP_REFLOW
+; 	ljmp Done_Set_X0
+
+; Display_Soak:
+; 	clr a
+; 	mov x+0, TEMP_SOAK
+; 	; Set_Cursor(2,9)
+
+; Done_Set_X0:
+; 	mov x+1, #0x00
+; 	mov x+2, #0x00
+; 	mov x+3, #0x00
+
+; 	lcall hex2bcd
+; 	Set_Cursor(2,12)
+; 	Display_BCD(bcd+1)
+; 	Set_Cursor(2,14)
+; 	Display_BCD(bcd+0)
+; 	RET
+
+;-------------------------------JH
 Check_Buttons:
-	jb TENS_BUTTON, onesbutton
-	lcall Wait30ms
-	jb TENS_BUTTON, onesbutton
+	setb BTP
+	setb BOP
+	setb BTM
+	setb BOM
+	setb BMode
+	setb MX_PIN
 
-	jnb TENS_BUTTON, $
-	jnb MODE_BUTTON, reflowaddten; if MODE BUTTON IS PRESSED, jump
-	mov a, TEMP_SOAK
-	add a, #0x0A
-	mov TEMP_SOAK, a
-	ljmp onesbutton
-reflowaddten:
-	mov a, TEMP_REFLOW
-	add a, #0x0A
-	mov TEMP_REFLOW, a
-onesbutton:
-	jb ONES_BUTTON, done_check_button
-	lcall Wait30ms
-	jb ONES_BUTTON, done_check_button
+	;Check if button is pressed
+	clr TENS_BUTTON_PLUS
+	clr ONES_BUTTON_PLUS
+	clr TENS_BUTTON_MINUS
+	clr ONES_BUTTON_MINUS
+	clr MODE_BUTTON
 
-	jnb ONES_BUTTON, $
-	jnb MODE_BUTTON, reflowaddone; if MODE BUTTON IS PRESSED, jump
+
+	;Debounce
+	jb MX_PIN,Done_Check_B
+	lcall wait30ms
+	jb MX_PIN,Done_Check_B
+
+
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	setb TENS_BUTTON_MINUS
+	setb ONES_BUTTON_MINUS
+	setb MODE_BUTTON
+
+	;Check which buttons were pushed
+
+	clr TENS_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BTP,c
+	setb TENS_BUTTON_PLUS
+
+
+	clr ONES_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BOP,c
+	setb ONES_BUTTON_PLUS
+
+
+	clr TENS_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BTM,c
+	setb TENS_BUTTON_MINUS
+
+
+	clr ONES_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BOM,c
+	setb ONES_BUTTON_MINUS
+
+
+	clr MODE_BUTTON
+	mov c,MX_PIN
+	mov BMode,c
+	setb MODE_BUTTON
+Done_Check_B:
+	RET
+
+
+
+;Set Reflow temperature -------------------------------JH
+Set_Reflow_Temp:
+	jb Second_Flag, One_Second_Reflow_Mark
+	ljmp Done_Set_Reflow_Temp
+One_Second_Reflow_Mark:
+	setb BTP
+	setb BOP
+	setb BTM
+	setb BOM
+	setb BMode
+	setb MX_PIN
+
+	;Check if button is pressed
+	clr TENS_BUTTON_PLUS
+	clr ONES_BUTTON_PLUS
+	clr TENS_BUTTON_MINUS
+	clr ONES_BUTTON_MINUS
+	clr MODE_BUTTON
+
+	;Debounce
+	jb MX_PIN,Done_Set_Reflow_Temp
+	lcall wait30ms
+	jb MX_PIN,Done_Set_Reflow_Temp
+
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	setb TENS_BUTTON_MINUS
+	setb ONES_BUTTON_MINUS
+	setb MODE_BUTTON
+
+	;Check which buttons were pushed
+
+	clr TENS_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BTP,c
+	setb TENS_BUTTON_PLUS
+
+	jb BTP,Check_Ones_Reflow_Plus
+	mov a, TEMP_REFLOW
+	add a,#0x0A
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Reflow_Temp
+
+Check_Ones_Reflow_Plus:
+	clr ONES_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BOP,c
+	setb ONES_BUTTON_PLUS
+
+	jb BOP,Check_Tens_Reflow_Minus
+	mov a, TEMP_Reflow
+	add a,#1
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Reflow_Temp
+
+Check_Tens_Reflow_Minus:
+	clr TENS_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BTM,c
+	setb TENS_BUTTON_MINUS
+
+	jb BTM,Check_Ones_Reflow_Minus
+	mov a, TEMP_Reflow
+	subb a,#10
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Reflow_Temp
+
+Check_Ones_Reflow_Minus:
+	clr ONES_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BOM,c
+	setb ONES_BUTTON_MINUS
+
+	jb BOM,Done_Set_Reflow_Temp
+	mov a, TEMP_Reflow
+	subb a,#1
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+
+Done_Set_Reflow_Temp:
+	RET
+
+
+
+;Set Soaking temperature
+Set_Soak_Temp:
+	jb Second_Flag, One_Second_Soak_Mark
+	ljmp Done_Set_Soak_Temp
+One_Second_Soak_Mark:
+	setb BTP
+	setb BOP
+	setb BTM
+	setb BOM
+	setb BMode
+	setb MX_PIN
+
+	;Check if button is pressed
+	clr TENS_BUTTON_PLUS
+	clr ONES_BUTTON_PLUS
+	clr TENS_BUTTON_MINUS
+	clr ONES_BUTTON_MINUS
+	clr MODE_BUTTON
+
+	;Debounce
+	jb MX_PIN,Done_Set_Soak_Temp
+	lcall wait30ms
+	jb MX_PIN,Done_Set_Soak_Temp
+
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	setb TENS_BUTTON_MINUS
+	setb ONES_BUTTON_MINUS
+	setb MODE_BUTTON
+
+	;Check which buttons were pushed
+
+	clr TENS_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BTP,c
+	setb TENS_BUTTON_PLUS
+
+	jb BTP,Check_Ones_Plus_Soak
 	mov a, TEMP_SOAK
-	add a, #0x01
-	mov TEMP_SOAK, a
-	ljmp done_check_button
-reflowaddone:
-	mov a, TEMP_REFLOW
-	add a, #0x01
-	mov TEMP_REFLOW, a
-done_check_button:
-	mov a, TEMP_REFLOW
-	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
-	jnc done_reflow_and_soak_temp_check ;
-	mov a, TEMP_REFLOW
-	mov TEMP_SOAK, a
-done_reflow_and_soak_temp_check:
-	ret
+	add a,#0x0A
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Soak_Temp
+
+Check_Ones_Plus_Soak:
+	clr ONES_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BOP,c
+	setb ONES_BUTTON_PLUS
+
+	jb BOP,Check_Tens_Minus_Soak
+	mov a, TEMP_SOAK
+	add a,#1
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Soak_Temp
+
+Check_Tens_Minus_Soak:
+	clr TENS_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BTM,c
+	setb TENS_BUTTON_MINUS
+
+	jb BTM,Check_Ones_Minus_Soak
+	mov a, TEMP_SOAK
+	subb a,#10
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Soak_Temp
+
+Check_Ones_Minus_Soak:
+	clr ONES_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BOM,c
+	setb ONES_BUTTON_MINUS
+
+	jb BOM,Done_Set_Soak_Temp
+	mov a, TEMP_SOAK
+	subb a,#1
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+
+Done_Set_Soak_Temp:
+	RET
+
+;-------------------------------JH
 
 Init_Vars:
     ; Initial Values at State 0
@@ -263,8 +542,6 @@ Init_Vars:
 
 	MOV THERMOCOUPLE_TEMP+0, #0
 	MOV THERMOCOUPLE_TEMP+1, #0
-
-	setb State_TX_Flag
 Reset_Vars:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x00
@@ -277,9 +554,10 @@ Reset_Vars:
 
     clr OUTPUT_PIN
 	SETB START_BUTTON
-	setb TENS_BUTTON
-	setb ONES_BUTTON
-	setb MODE_BUTTON
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	clr MODE_BUTTON
+	clr Mode
 	CLR Below_Temp_Flag
 	CLR Error_Triggered_Flag
 
@@ -289,7 +567,6 @@ Timer0_ISR:
 	; Save Registers to Stack.
     PUSH ACC
 	PUSH PSW
-
 
 	CLR TR0
 	MOV TH0, #HIGH(TIMER0_RELOAD)
@@ -329,6 +606,8 @@ Continue:
 	MOV A, Count1ms+1
 	CJNE A, #HIGH(1000), Timer2_ISR_Done
 
+	setb Second_Flag
+	setb Emergency_Flag
 	LCALL TX_Temp_Oven
 	CLR A
 	MOV Count1ms+0, A
@@ -358,10 +637,12 @@ Error_State_Triggered:
 	;CLR Error_Triggered_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
+
 	setb State_TX_Flag
 	LJMP Timer2_ISR_Done
 OtherStates:
 	MOV BCD_Counter, #0x00
+
 	setb State_TX_Flag
 	INC STATE_NUM ; Increment State Number
 Timer2_ISR_Done:
@@ -432,6 +713,7 @@ State0:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
+
 	setb State_TX_Flag
 	;setb TR0
 Quit0:
@@ -441,7 +723,6 @@ State1:
     MOV Timer_State, #0x01
     LCALL Power100
 
-
 	MOV R1, TEMP_SOAK
 	LCALL Check_Temp_Oven ; Check If Oven Temperature Reaches 150
 	JB Below_Temp_Flag, Quit1 ; If Temperature Below then jump to quit1
@@ -450,6 +731,7 @@ State1:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x90
 	INC STATE_NUM
+
 	setb State_TX_Flag
 Quit1:
 	RET
@@ -458,14 +740,12 @@ State2:
     LCALL Power20 ; Set Power to 20%
     MOV Timer_State, #0x01
 
-
 Quit2:
 	RET
 
 State3:
     LCALL Power100 ; Set Power to 100%
     MOV Timer_State, #0x00
-
 
 	MOV R1, TEMP_REFLOW
 	LCALL Check_Temp_Oven
@@ -476,6 +756,7 @@ State3:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
+
 	setb State_TX_Flag
 Quit3:
 	RET
@@ -483,7 +764,6 @@ Quit3:
 State4:
     LCALL Power20
     MOV Timer_State, #0x01
-
     ;JB START_BUTTON, Quit4 ; if START BUTTON is NOT PRESSED
 	;LCALL Wait30ms
 	;JB START_BUTTON, Quit4
@@ -504,6 +784,7 @@ State5:
 	CLR Below_Temp_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
+
 	setb State_TX_Flag
 Quit5:
 	RET
@@ -521,10 +802,15 @@ Init_All:
 	MOV	P0M1, #0X00
 	MOV	P0M2, #0X00
 
+
+	setb Second_Flag
+	setb Emergency_Flag
+
 	Set_Cursor(1,1)
 	Send_Constant_String(#Initial_Message1)
 	Set_Cursor(2,1)
 	Send_Constant_String(#Initial_Message2)
+
 	LCALL Init_Vars
 Init_SerialPort:
     ; Configure Serial Port and Baud Rate
@@ -599,14 +885,42 @@ Main:
 	LCALL LCD_4BIT
 Forever:
 	LCALL Get_and_Transmit_Temp
-	;LCALL Display_LCDTest
+	LCALL Display_LCDFinal
 	;LCALL Display_LCD
-	lcall Display_LCDFinal
 	LCALL StateChanges
+
 	LCALL TX_StateNumber
 
 	clr State_TX_Flag
 
-	LJMP Forever
+	;Display temp settings
+	; LCALL Display_SetTemp
 
+	jb BMode, No_Mode_Change
+	jnb Second_Flag, No_Mode_Change
+	cpl Mode
+No_Mode_Change:
+
+	jnb Mode, Soak_Temp
+	LCALL Set_Reflow_Temp
+	ljmp Done_Temp_Set
+
+Soak_Temp:
+	LCALL Set_Soak_Temp
+
+Done_Temp_Set:
+	clr Second_Flag
+Button_Reset:
+	MOV A, STATE_NUM
+	jz Forever_End ; skip if a  = 0
+
+	JNB Emergency_Flag, Forever_End
+	JB START_BUTTON, Forever_End ; Go to Quit0 If Start Button is NOT Pressed
+	CLR Emergency_Flag
+
+	setb State_TX_Flag
+	MOV STATE_NUM, #0x00
+	JNB Start_Button, $
+Forever_End:
+	LJMP Forever
 END
