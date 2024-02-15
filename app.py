@@ -18,6 +18,8 @@ from tkinter import ttk
 import serial
 import sys
 
+# from server_comm import *
+
 ###############
 ### Classes ###
 ###############
@@ -97,6 +99,7 @@ class StripChart:
             if rx_data is not None :
                 try :
                     self.current_val = float(rx_data) # Check if Temperature
+                    # server_comm.send(self.current_val)
                     print(f'Current Temperature: {self.current_val}')
                 except (TypeError, ValueError, UnicodeDecodeError) :
                     if self.current_state != self.return_state(rx_data) :
