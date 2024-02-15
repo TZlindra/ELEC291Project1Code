@@ -82,7 +82,7 @@ class StripChart:
             return None
 
     def return_state(self, rx_data):
-        states = ['S00', 'S01', 'S02', 'S03', 'S04', 'S5']
+        states = ['S00', 'S01', 'S02', 'S03', 'S04', 'S05']
         if (rx_data in states) :
             return int(rx_data[-1])
         else:
