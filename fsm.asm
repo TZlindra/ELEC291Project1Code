@@ -800,7 +800,7 @@ Quit3:
 	RET
 
 State4:
-    LCALL Power30
+    LCALL Power60
     MOV Timer_State, #0x01
     ;JB START_BUTTON, Quit4 ; if START BUTTON is NOT PRESSED
 	;LCALL Wait30ms
@@ -932,9 +932,6 @@ Continue_forever:
 	LCALL TX_StateNumber
 
 	clr State_TX_Flag
-
-	;Display temp settings
-	; LCALL Display_SetTemp
 
 	jb BMode, No_Mode_Change
 	jnb Second_Flag, No_Mode_Change

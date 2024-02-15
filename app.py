@@ -18,7 +18,7 @@ from tkinter import ttk
 import serial
 import sys
 
-from Uploading import *
+from uploading import *
 
 ###############
 ### Classes ###
@@ -151,7 +151,7 @@ class StripChart:
             csv_df = self.data_df.copy()
             csv_df['Temperature'] = csv_df.groupby('Datetime')['Temperature'].transform('mean')
             csv_df['Datetime'] = csv_df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            csv_path = f'''N76E003_{csv_df['Datetime'].iloc[0].replace(' ', '_').replace('-', '_').replace(':', '_')}.csv'''
+            csv_path = f'''LogBook/N76E003_{csv_df['Datetime'].iloc[0].replace(' ', '_').replace('-', '_').replace(':', '_')}.csv'''
             csv_df.to_csv(csv_path, index = False)
 
             print(f"Data Exported to {csv_path}\n\nData Preview:\n")
