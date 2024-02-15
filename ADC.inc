@@ -243,7 +243,7 @@ Display_Reflow_Temperature:
 	MOV X+3, #0
 
 	LCALL hex2BCD
-	Set_Cursor(2, 9)
+	Set_Cursor(2, 7)
 	Display_BCD(BCD+1)
 	Display_BCD(BCD+0)
 

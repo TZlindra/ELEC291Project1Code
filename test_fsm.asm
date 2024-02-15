@@ -32,12 +32,14 @@ TIMER1_RELOAD     EQU (0X100 - (CLK / (16 * BAUD)))
 TIMER2_RATE       EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD     EQU ((65536- (CLK/TIMER2_RATE)))
 
+
 ;-------------------;
 ;- Pin Definitions -;
 ;-------------------;
 
+; ToDo : Button Multiplexer
 START_BUTTON 	  EQU P0.4 ; Pin 20
-MODE_BUTTON       EQU P1.0 ; Pin 15
+MODE_BUTTON       EQU P0.3 ; Pin 19
 
 TENS_BUTTON_PLUS       EQU P1.3 ; Pin 12
 ONES_BUTTON_PLUS       EQU P0.0 ; Pin 16
@@ -59,6 +61,7 @@ ORG 0x0000
 
 ; External interrupt 0 vector (not used in this code)
 ORG 0x0003
+
 	RETI
 
 ; Timer/Counter 0 overflow interrupt vector
@@ -80,6 +83,11 @@ ORG 0x0023
 ; Timer/Counter 2 overflow interrupt vector
 ORG 0x002B
 	LJMP Timer2_ISR
+
+
+st:     db 'ST', 0
+rt:     db 'RT', 0
+
 
 DSEG AT 0x30
 
@@ -127,21 +135,22 @@ OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
 BSEG
 MF: DBIT 1
 
-Second_Flag:  DBIT 1
-
 Below_Temp_Flag: DBIT 1
 Error_Triggered_Flag: DBIT 1
 
 Speaker_En_Flag:   DBIT 1
+Reflow_Soak_Flag:   DBIT 1
 State_TX_Flag: DBIT 1
+Second_Flag:  DBIT 1
 
-; Multiplexer Buttons
-BTP:   DBIT 1
-BOP:   DBIT 1
-BTM:   DBIT 1
-BOM:   DBIT 1
-BMode: DBIT 1
-Mode:  DBIT 1
+
+
+BTP: dbit 1 ;Multiplex buttons
+BOP: dbit 1
+BTM: dbit 1
+BOM: dbit 1
+BMode: dbit 1
+Mode: dbit 1
 
 
 $NOLIST
@@ -150,6 +159,7 @@ $include(Serial.INC) ; Library of Serial Port Related Functions and Utility Macr
 $include(math32.INC) ; Library of 32-bit Math Functions
 $include(ADC.INC) ; Library of ADC and Temperature Function
 $include(PWM.INC) ; Library of PWM Functions
+$include(test.INC) ; Library of Test Functions
 $LIST
 
 Initial_Message1:  db 'To= xxC  Tj=xxC ', 0
@@ -184,20 +194,29 @@ Display_LCDFinal:
 	lcall Display_Soak_Temperature
 
 	Set_Cursor(2,1)
-	Display_char(#'s')
+	Display_char(#'S')
 
-	Set_Cursor(2,9)
-	Display_char(#'r')
+	Set_Cursor(2,7)
+	Display_char(#'R')
 
 	Set_Cursor(2,5)
 	Display_char(#'C')
 
-	Set_Cursor(2,13)
+	Set_Cursor(2,11)
 	Display_char(#'C')
 
 	Set_Cursor(2,15)
     Display_BCD(STATE_NUM)
 
+	jnb Mode, Display_Soak
+Display_Reflow:
+	Set_Cursor(2, 13)
+	Display_char(#'R')
+	SJMP Display_Mode_Done
+Display_Soak:
+	Set_Cursor(2, 13)
+	Display_char(#'S')
+Display_Mode_Done:
 	RET
 
 Display_LCDTest:
@@ -220,45 +239,32 @@ Display_LCDTest:
 
 	RET
 
-; Check_Buttons:
-; 	jb TENS_BUTTON, onesbutton
-; 	lcall Wait30ms
-; 	jb TENS_BUTTON, onesbutton
+; Display_SetTemp:
 
-; 	jnb TENS_BUTTON, $
-; 	jnb MODE_BUTTON, reflowaddten; if MODE BUTTON IS PRESSED, jump
-; 	mov a, TEMP_SOAK
-; 	add a, #0x0A
-; 	mov TEMP_SOAK, a
-; 	ljmp onesbutton
-; reflowaddten:
-; 	mov a, TEMP_REFLOW
-; 	add a, #0x0A
-; 	mov TEMP_REFLOW, a
-; onesbutton:
-; 	jb ONES_BUTTON, done_check_button
-; 	lcall Wait30ms
-; 	jb ONES_BUTTON, done_check_button
+; 	;mov a, TEMP_SOAK
+; 	; Set_Cursor(2,9)
+; 	clr a
+; 	mov x+0, TEMP_REFLOW
+; 	ljmp Done_Set_X0
 
-; 	jnb ONES_BUTTON, $
-; 	jnb MODE_BUTTON, reflowaddone; if MODE BUTTON IS PRESSED, jump
-; 	mov a, TEMP_SOAK
-; 	add a, #0x01
-; 	mov TEMP_SOAK, a
-; 	ljmp done_check_button
-; reflowaddone:
-; 	mov a, TEMP_REFLOW
-; 	add a, #0x01
-; 	mov TEMP_REFLOW, a
-; done_check_button:
-; 	mov a, TEMP_REFLOW
-; 	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
-; 	jnc done_reflow_and_soak_temp_check ;
-; 	mov a, TEMP_REFLOW
-; 	mov TEMP_SOAK, a
-; done_reflow_and_soak_temp_check:
-; 	ret
+; Display_Soak:
+; 	clr a
+; 	mov x+0, TEMP_SOAK
+; 	; Set_Cursor(2,9)
 
+; Done_Set_X0:
+; 	mov x+1, #0x00
+; 	mov x+2, #0x00
+; 	mov x+3, #0x00
+
+; 	lcall hex2bcd
+; 	Set_Cursor(2,12)
+; 	Display_BCD(bcd+1)
+; 	Set_Cursor(2,14)
+; 	Display_BCD(bcd+0)
+; 	RET
+
+;-------------------------------JH
 Check_Buttons:
 	setb BTP
 	setb BOP
@@ -518,6 +524,8 @@ Check_Ones_Minus_Soak:
 Done_Set_Soak_Temp:
 	RET
 
+;-------------------------------JH
+
 Init_Vars:
     ; Initial Values at State 0
 	MOV STATE_NUM, #0x00
@@ -534,8 +542,6 @@ Init_Vars:
 
 	MOV THERMOCOUPLE_TEMP+0, #0
 	MOV THERMOCOUPLE_TEMP+1, #0
-
-	setb State_TX_Flag
 Reset_Vars:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x00
@@ -548,9 +554,10 @@ Reset_Vars:
 
     clr OUTPUT_PIN
 	SETB START_BUTTON
-	; setb TENS_BUTTON
-	; setb ONES_BUTTON
-	; setb MODE_BUTTON
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	clr MODE_BUTTON
+	clr Mode
 	CLR Below_Temp_Flag
 	CLR Error_Triggered_Flag
 
@@ -560,7 +567,6 @@ Timer0_ISR:
 	; Save Registers to Stack.
     PUSH ACC
 	PUSH PSW
-
 
 	CLR TR0
 	MOV TH0, #HIGH(TIMER0_RELOAD)
@@ -600,6 +606,7 @@ Continue:
 	MOV A, Count1ms+1
 	CJNE A, #HIGH(1000), Timer2_ISR_Done
 
+	setb Second_Flag
 	LCALL TX_Temp_Oven
 	CLR A
 	MOV Count1ms+0, A
@@ -629,10 +636,12 @@ Error_State_Triggered:
 	;CLR Error_Triggered_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
+
 	setb State_TX_Flag
 	LJMP Timer2_ISR_Done
 OtherStates:
 	MOV BCD_Counter, #0x00
+
 	setb State_TX_Flag
 	INC STATE_NUM ; Increment State Number
 Timer2_ISR_Done:
@@ -703,6 +712,7 @@ State0:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
+
 	setb State_TX_Flag
 	;setb TR0
 Quit0:
@@ -712,7 +722,6 @@ State1:
     MOV Timer_State, #0x01
     LCALL Power100
 
-
 	MOV R1, TEMP_SOAK
 	LCALL Check_Temp_Oven ; Check If Oven Temperature Reaches 150
 	JB Below_Temp_Flag, Quit1 ; If Temperature Below then jump to quit1
@@ -721,6 +730,7 @@ State1:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x90
 	INC STATE_NUM
+
 	setb State_TX_Flag
 Quit1:
 	RET
@@ -729,14 +739,12 @@ State2:
     LCALL Power20 ; Set Power to 20%
     MOV Timer_State, #0x01
 
-
 Quit2:
 	RET
 
 State3:
     LCALL Power100 ; Set Power to 100%
     MOV Timer_State, #0x00
-
 
 	MOV R1, TEMP_REFLOW
 	LCALL Check_Temp_Oven
@@ -747,6 +755,7 @@ State3:
 	MOV BCD_Counter, #0x00
 	MOV Resulting_Counter, #0x60
 	INC STATE_NUM
+
 	setb State_TX_Flag
 Quit3:
 	RET
@@ -754,7 +763,6 @@ Quit3:
 State4:
     LCALL Power20
     MOV Timer_State, #0x01
-
     ;JB START_BUTTON, Quit4 ; if START BUTTON is NOT PRESSED
 	;LCALL Wait30ms
 	;JB START_BUTTON, Quit4
@@ -775,6 +783,7 @@ State5:
 	CLR Below_Temp_Flag
 	MOV STATE_NUM, #0x00
 	MOV BCD_Counter, #0x00
+
 	setb State_TX_Flag
 Quit5:
 	RET
@@ -792,10 +801,14 @@ Init_All:
 	MOV	P0M1, #0X00
 	MOV	P0M2, #0X00
 
+
+	setb Second_Flag
+
 	Set_Cursor(1,1)
 	Send_Constant_String(#Initial_Message1)
 	Set_Cursor(2,1)
 	Send_Constant_String(#Initial_Message2)
+
 	LCALL Init_Vars
 Init_SerialPort:
     ; Configure Serial Port and Baud Rate
@@ -870,14 +883,32 @@ Main:
 	LCALL LCD_4BIT
 Forever:
 	LCALL Get_and_Transmit_Temp
-	;LCALL Display_LCDTest
+	LCALL Display_LCDFinal
 	;LCALL Display_LCD
-	lcall Display_LCDFinal
 	LCALL StateChanges
 	LCALL TX_StateNumber
 
 	clr State_TX_Flag
 
-	LJMP Forever
+	;Display temp settings
+	; LCALL Display_SetTemp
+	LCALL Check_Buttons
 
+
+
+	jb BMode, No_Mode_Change
+	jnb Second_Flag, No_Mode_Change
+		cpl Mode
+No_Mode_Change:
+
+	jnb Mode, Soak_Temp
+	LCALL Set_Reflow_Temp
+	ljmp Done_Temp_Set
+
+Soak_Temp:
+	LCALL Set_Soak_Temp
+
+Done_Temp_Set:
+	clr Second_Flag
+	LJMP Forever
 END
