@@ -141,9 +141,9 @@ Error_Triggered_Flag: DBIT 1
 Speaker_En_Flag:   DBIT 1
 Reflow_Soak_Flag:   DBIT 1
 State_TX_Flag: DBIT 1
+
 Second_Flag:  DBIT 1
-
-
+Emergency_Flag:  DBIT 1
 
 BTP: dbit 1 ;Multiplex buttons
 BOP: dbit 1
@@ -607,6 +607,7 @@ Continue:
 	CJNE A, #HIGH(1000), Timer2_ISR_Done
 
 	setb Second_Flag
+	setb Emergency_Flag
 	LCALL TX_Temp_Oven
 	CLR A
 	MOV Count1ms+0, A
@@ -803,6 +804,7 @@ Init_All:
 
 
 	setb Second_Flag
+	setb Emergency_Flag
 
 	Set_Cursor(1,1)
 	Send_Constant_String(#Initial_Message1)
@@ -886,19 +888,17 @@ Forever:
 	LCALL Display_LCDFinal
 	;LCALL Display_LCD
 	LCALL StateChanges
+
 	LCALL TX_StateNumber
 
 	clr State_TX_Flag
 
 	;Display temp settings
 	; LCALL Display_SetTemp
-	LCALL Check_Buttons
-
-
 
 	jb BMode, No_Mode_Change
 	jnb Second_Flag, No_Mode_Change
-		cpl Mode
+	cpl Mode
 No_Mode_Change:
 
 	jnb Mode, Soak_Temp
@@ -910,5 +910,17 @@ Soak_Temp:
 
 Done_Temp_Set:
 	clr Second_Flag
+Button_Reset:
+	MOV A, STATE_NUM
+	jz Forever_End ; skip if a  = 0
+
+	JNB Emergency_Flag, Forever_End
+	JB START_BUTTON, Forever_End ; Go to Quit0 If Start Button is NOT Pressed
+	CLR Emergency_Flag
+
+	setb State_TX_Flag
+	MOV STATE_NUM, #0x00
+	JNB Start_Button, $
+Forever_End:
 	LJMP Forever
 END

@@ -47,7 +47,7 @@ class Serial(serial.Serial) :
         super().close()
 
 class StripChart:
-    def __init__(self, master, conn = None, xlim = 120) :
+    def __init__(self, master, conn = None, xlim = 1500) :
         self.master = master
         self.conn = conn
         self.fig = plt.figure()
