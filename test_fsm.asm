@@ -36,13 +36,16 @@ TIMER2_RELOAD     EQU ((65536- (CLK/TIMER2_RATE)))
 ;- Pin Definitions -;
 ;-------------------;
 
-; ToDo : Button Multiplexer
 START_BUTTON 	  EQU P0.4 ; Pin 20
 MODE_BUTTON       EQU P1.0 ; Pin 15
 
-TENS_BUTTON       EQU P1.2 ; Pin 13
-ONES_BUTTON       EQU P1.6 ; Pin 8
+TENS_BUTTON_PLUS       EQU P1.3 ; Pin 12
+ONES_BUTTON_PLUS       EQU P0.0 ; Pin 16
 
+TENS_BUTTON_MINUS       EQU P0.1 ; Pin 17
+ONES_BUTTON_MINUS       EQU P0.2 ; Pin 18
+
+MX_PIN            EQU P1.6 ; Pin 8
 OUTPUT_PIN 	      EQU P1.5 ; Pin 10
 
 REF_ADC           EQU P1.7 ; Pin 6
@@ -124,12 +127,22 @@ OVEN_TEMP: DS 1 ; 1 Byte Temperature Value With 1 Degree Resolution
 BSEG
 MF: DBIT 1
 
+Second_Flag:  DBIT 1
+
 Below_Temp_Flag: DBIT 1
 Error_Triggered_Flag: DBIT 1
 
 Speaker_En_Flag:   DBIT 1
+State_TX_Flag: DBIT 1
 
-State_TX_Flag: 		dbit 1
+; Multiplexer Buttons
+BTP:   DBIT 1
+BOP:   DBIT 1
+BTM:   DBIT 1
+BOM:   DBIT 1
+BMode: DBIT 1
+Mode:  DBIT 1
+
 
 $NOLIST
 $include(LCD_4bit.INC) ; Library of LCD Related Functions and Utility Macros
@@ -137,7 +150,6 @@ $include(Serial.INC) ; Library of Serial Port Related Functions and Utility Macr
 $include(math32.INC) ; Library of 32-bit Math Functions
 $include(ADC.INC) ; Library of ADC and Temperature Function
 $include(PWM.INC) ; Library of PWM Functions
-$include(test.INC) ; Library of Test Functions
 $LIST
 
 Initial_Message1:  db 'To= xxC  Tj=xxC ', 0
@@ -202,50 +214,309 @@ Display_LCDTest:
 	Display_BCD(Resulting_Counter)
 
 	; lcall Display_SpeakerFlag
-	lcall Display_BelowFlag
+	; lcall Display_BelowFlag
 
 	; LCALL Display_Output_Voltage
 
 	RET
 
+; Check_Buttons:
+; 	jb TENS_BUTTON, onesbutton
+; 	lcall Wait30ms
+; 	jb TENS_BUTTON, onesbutton
+
+; 	jnb TENS_BUTTON, $
+; 	jnb MODE_BUTTON, reflowaddten; if MODE BUTTON IS PRESSED, jump
+; 	mov a, TEMP_SOAK
+; 	add a, #0x0A
+; 	mov TEMP_SOAK, a
+; 	ljmp onesbutton
+; reflowaddten:
+; 	mov a, TEMP_REFLOW
+; 	add a, #0x0A
+; 	mov TEMP_REFLOW, a
+; onesbutton:
+; 	jb ONES_BUTTON, done_check_button
+; 	lcall Wait30ms
+; 	jb ONES_BUTTON, done_check_button
+
+; 	jnb ONES_BUTTON, $
+; 	jnb MODE_BUTTON, reflowaddone; if MODE BUTTON IS PRESSED, jump
+; 	mov a, TEMP_SOAK
+; 	add a, #0x01
+; 	mov TEMP_SOAK, a
+; 	ljmp done_check_button
+; reflowaddone:
+; 	mov a, TEMP_REFLOW
+; 	add a, #0x01
+; 	mov TEMP_REFLOW, a
+; done_check_button:
+; 	mov a, TEMP_REFLOW
+; 	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
+; 	jnc done_reflow_and_soak_temp_check ;
+; 	mov a, TEMP_REFLOW
+; 	mov TEMP_SOAK, a
+; done_reflow_and_soak_temp_check:
+; 	ret
+
 Check_Buttons:
-	jb TENS_BUTTON, onesbutton
-	lcall Wait30ms
-	jb TENS_BUTTON, onesbutton
+	setb BTP
+	setb BOP
+	setb BTM
+	setb BOM
+	setb BMode
+	setb MX_PIN
 
-	jnb TENS_BUTTON, $
-	jnb MODE_BUTTON, reflowaddten; if MODE BUTTON IS PRESSED, jump
-	mov a, TEMP_SOAK
-	add a, #0x0A
-	mov TEMP_SOAK, a
-	ljmp onesbutton
-reflowaddten:
-	mov a, TEMP_REFLOW
-	add a, #0x0A
-	mov TEMP_REFLOW, a
-onesbutton:
-	jb ONES_BUTTON, done_check_button
-	lcall Wait30ms
-	jb ONES_BUTTON, done_check_button
+	;Check if button is pressed
+	clr TENS_BUTTON_PLUS
+	clr ONES_BUTTON_PLUS
+	clr TENS_BUTTON_MINUS
+	clr ONES_BUTTON_MINUS
+	clr MODE_BUTTON
 
-	jnb ONES_BUTTON, $
-	jnb MODE_BUTTON, reflowaddone; if MODE BUTTON IS PRESSED, jump
+
+	;Debounce
+	jb MX_PIN,Done_Check_B
+	lcall wait30ms
+	jb MX_PIN,Done_Check_B
+
+
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	setb TENS_BUTTON_MINUS
+	setb ONES_BUTTON_MINUS
+	setb MODE_BUTTON
+
+	;Check which buttons were pushed
+
+	clr TENS_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BTP,c
+	setb TENS_BUTTON_PLUS
+
+
+	clr ONES_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BOP,c
+	setb ONES_BUTTON_PLUS
+
+
+	clr TENS_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BTM,c
+	setb TENS_BUTTON_MINUS
+
+
+	clr ONES_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BOM,c
+	setb ONES_BUTTON_MINUS
+
+
+	clr MODE_BUTTON
+	mov c,MX_PIN
+	mov BMode,c
+	setb MODE_BUTTON
+Done_Check_B:
+	RET
+
+
+
+;Set Reflow temperature -------------------------------JH
+Set_Reflow_Temp:
+	jb Second_Flag, One_Second_Reflow_Mark
+	ljmp Done_Set_Reflow_Temp
+One_Second_Reflow_Mark:
+	setb BTP
+	setb BOP
+	setb BTM
+	setb BOM
+	setb BMode
+	setb MX_PIN
+
+	;Check if button is pressed
+	clr TENS_BUTTON_PLUS
+	clr ONES_BUTTON_PLUS
+	clr TENS_BUTTON_MINUS
+	clr ONES_BUTTON_MINUS
+	clr MODE_BUTTON
+
+	;Debounce
+	jb MX_PIN,Done_Set_Reflow_Temp
+	lcall wait30ms
+	jb MX_PIN,Done_Set_Reflow_Temp
+
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	setb TENS_BUTTON_MINUS
+	setb ONES_BUTTON_MINUS
+	setb MODE_BUTTON
+
+	;Check which buttons were pushed
+
+	clr TENS_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BTP,c
+	setb TENS_BUTTON_PLUS
+
+	jb BTP,Check_Ones_Reflow_Plus
+	mov a, TEMP_REFLOW
+	add a,#0x0A
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Reflow_Temp
+
+Check_Ones_Reflow_Plus:
+	clr ONES_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BOP,c
+	setb ONES_BUTTON_PLUS
+
+	jb BOP,Check_Tens_Reflow_Minus
+	mov a, TEMP_Reflow
+	add a,#1
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Reflow_Temp
+
+Check_Tens_Reflow_Minus:
+	clr TENS_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BTM,c
+	setb TENS_BUTTON_MINUS
+
+	jb BTM,Check_Ones_Reflow_Minus
+	mov a, TEMP_Reflow
+	subb a,#10
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Reflow_Temp
+
+Check_Ones_Reflow_Minus:
+	clr ONES_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BOM,c
+	setb ONES_BUTTON_MINUS
+
+	jb BOM,Done_Set_Reflow_Temp
+	mov a, TEMP_Reflow
+	subb a,#1
+	mov TEMP_Reflow,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+
+Done_Set_Reflow_Temp:
+	RET
+
+
+
+;Set Soaking temperature
+Set_Soak_Temp:
+	jb Second_Flag, One_Second_Soak_Mark
+	ljmp Done_Set_Soak_Temp
+One_Second_Soak_Mark:
+	setb BTP
+	setb BOP
+	setb BTM
+	setb BOM
+	setb BMode
+	setb MX_PIN
+
+	;Check if button is pressed
+	clr TENS_BUTTON_PLUS
+	clr ONES_BUTTON_PLUS
+	clr TENS_BUTTON_MINUS
+	clr ONES_BUTTON_MINUS
+	clr MODE_BUTTON
+
+	;Debounce
+	jb MX_PIN,Done_Set_Soak_Temp
+	lcall wait30ms
+	jb MX_PIN,Done_Set_Soak_Temp
+
+	setb TENS_BUTTON_PLUS
+	setb ONES_BUTTON_PLUS
+	setb TENS_BUTTON_MINUS
+	setb ONES_BUTTON_MINUS
+	setb MODE_BUTTON
+
+	;Check which buttons were pushed
+
+	clr TENS_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BTP,c
+	setb TENS_BUTTON_PLUS
+
+	jb BTP,Check_Ones_Plus_Soak
 	mov a, TEMP_SOAK
-	add a, #0x01
-	mov TEMP_SOAK, a
-	ljmp done_check_button
-reflowaddone:
-	mov a, TEMP_REFLOW
-	add a, #0x01
-	mov TEMP_REFLOW, a
-done_check_button:
-	mov a, TEMP_REFLOW
-	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
-	jnc done_reflow_and_soak_temp_check ;
-	mov a, TEMP_REFLOW
-	mov TEMP_SOAK, a
-done_reflow_and_soak_temp_check:
-	ret
+	add a,#0x0A
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Soak_Temp
+
+Check_Ones_Plus_Soak:
+	clr ONES_BUTTON_PLUS
+	mov c,MX_PIN
+	mov BOP,c
+	setb ONES_BUTTON_PLUS
+
+	jb BOP,Check_Tens_Minus_Soak
+	mov a, TEMP_SOAK
+	add a,#1
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Soak_Temp
+
+Check_Tens_Minus_Soak:
+	clr TENS_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BTM,c
+	setb TENS_BUTTON_MINUS
+
+	jb BTM,Check_Ones_Minus_Soak
+	mov a, TEMP_SOAK
+	subb a,#10
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+	ljmp Done_Set_Soak_Temp
+
+Check_Ones_Minus_Soak:
+	clr ONES_BUTTON_MINUS
+	mov c,MX_PIN
+	mov BOM,c
+	setb ONES_BUTTON_MINUS
+
+	jb BOM,Done_Set_Soak_Temp
+	mov a, TEMP_SOAK
+	subb a,#1
+	mov TEMP_SOAK,a
+	; mov x,a
+
+	; lcall hex2bcd
+	; lcall Display_SetTemp
+
+Done_Set_Soak_Temp:
+	RET
 
 Init_Vars:
     ; Initial Values at State 0
@@ -277,9 +548,9 @@ Reset_Vars:
 
     clr OUTPUT_PIN
 	SETB START_BUTTON
-	setb TENS_BUTTON
-	setb ONES_BUTTON
-	setb MODE_BUTTON
+	; setb TENS_BUTTON
+	; setb ONES_BUTTON
+	; setb MODE_BUTTON
 	CLR Below_Temp_Flag
 	CLR Error_Triggered_Flag
 
