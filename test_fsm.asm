@@ -85,8 +85,6 @@ ORG 0x002B
 	LJMP Timer2_ISR
 
 
-st:     db 'ST', 0
-rt:     db 'RT', 0
 
 
 DSEG AT 0x30
@@ -145,6 +143,8 @@ State_TX_Flag: DBIT 1
 Second_Flag:  DBIT 1
 Emergency_Flag:  DBIT 1
 
+SOAK_LESS_THAN_REFLOW_FLAG: DBIT 1
+
 BTP: dbit 1 ;Multiplex buttons
 BOP: dbit 1
 BTM: dbit 1
@@ -159,7 +159,6 @@ $include(Serial.INC) ; Library of Serial Port Related Functions and Utility Macr
 $include(math32.INC) ; Library of 32-bit Math Functions
 $include(ADC.INC) ; Library of ADC and Temperature Function
 $include(PWM.INC) ; Library of PWM Functions
-$include(test.INC) ; Library of Test Functions
 $LIST
 
 Initial_Message1:  db 'To= xxC  Tj=xxC ', 0
@@ -169,6 +168,9 @@ CSEG
 
 To_MSG: DB 'To=', 0
 Tj_MSG: DB 'C  Tj=', 0
+ERROR_MSG: DB '     ERROR      ', 0
+TEMP_MSG: DB '     S > R      ', 0
+EMPTY_MSG: DB '                ', 0
 
 LCD_RS EQU P1.3 ; Pin 12
 LCD_E  EQU P1.4 ; Pin 11
@@ -176,6 +178,15 @@ LCD_D4 EQU P0.0 ; Pin 16
 LCD_D5 EQU P0.1 ; Pin 15
 LCD_D6 EQU P0.2 ; Pin 18
 LCD_D7 EQU P0.3 ; Pin 19
+
+soak_is_less_than_reflow:
+	mov a, TEMP_REFLOW
+	subb a, TEMP_SOAK ; if REFLOW - SOAK = + we good
+	jnc check_soak_is_less_than_reflow ;
+	mov STATE_NUM, #0x00
+	setb SOAK_LESS_THAN_REFLOW_FLAG
+check_soak_is_less_than_reflow:
+	ret
 
 Display_LCDFinal:
 	lcall Display_LM335_Temperature
@@ -238,6 +249,19 @@ Display_LCDTest:
 	; LCALL Display_Output_Voltage
 
 	RET
+
+Display_Error:
+	Set_Cursor(1,1)
+	Send_Constant_String(#ERROR_MSG)
+	Set_Cursor(2,1)
+	Send_Constant_String(#TEMP_MSG)
+	lcall Wait2s
+	Set_Cursor(1,1)
+	Send_Constant_String(#EMPTY_MSG)
+	Set_Cursor(2,1)
+	Send_Constant_String(#EMPTY_MSG)
+	clr SOAK_LESS_THAN_REFLOW_FLAG
+	ret
 
 ; Display_SetTemp:
 
@@ -661,6 +685,18 @@ W1: djnz R0, W1 ; 4 cycles-> 4 * 60.285ns * 104 = 25us
     djnz R2, W3 ; 5.0ms * 6 = 30ms (Approximately)
     RET
 
+Wait2s:
+    MOV R3, #2      ; Adjusted for a 2-second delay
+X4: MOV R2, #200
+X3: MOV R1, #200
+X2: MOV R0, #104
+X1: djnz R0, X1     ; 25us * 104 = 2.6ms (Approximately)
+    djnz R1, X2     ; 2.6ms * 200 = 520ms (Approximately)
+    djnz R2, X3     ; 520ms * 66 = 2 seconds (Approximately)
+    djnz R3, X4     ; 520ms * 66 = 2 seconds (Approximately)
+    RET
+
+
 StateChanges: ; Check What Counter Number Will Be For Each State
 	MOV A, STATE_NUM
 	CJNE A, #0x00, Next1 ; Jump to Next1 if STATE_NUM is NOT 0
@@ -715,6 +751,8 @@ State0:
 	INC STATE_NUM
 
 	setb State_TX_Flag
+
+	lcall soak_is_less_than_reflow
 	;setb TR0
 Quit0:
 	RET
@@ -886,7 +924,9 @@ Main:
 Forever:
 	LCALL Get_and_Transmit_Temp
 	LCALL Display_LCDFinal
-	;LCALL Display_LCD
+	jnb SOAK_LESS_THAN_REFLOW_FLAG, Continue_forever
+	lcall Display_Error
+Continue_forever:
 	LCALL StateChanges
 
 	LCALL TX_StateNumber
