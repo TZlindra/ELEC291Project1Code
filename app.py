@@ -6,6 +6,7 @@ import time
 import datetime as dt
 
 import pandas as pd
+from IPython.display import display
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -15,6 +16,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import serial
+import sys
 
 ###############
 ### Classes ###
@@ -51,7 +53,7 @@ class StripChart:
         self.fig = plt.figure()
 
         self.ax = self.fig.add_subplot(111)
-        self.ax.set_title('Temperature Strip-Chart - State 0')
+        self.ax.set_title('Temperature Strip-Chart')
 
         self.xlim = xlim
         self.ax.set_xlim(0, self.xlim)
@@ -63,11 +65,11 @@ class StripChart:
         self.ax.grid()
 
         self.line, = self.ax.plot([], [], lw = 2)
-        self.current_state = 0
+        self.current_state = -1
         self.current_val = -273.15
         self.x_data, self.y_data = [], []
 
-        self.data_df = pd.DataFrame(columns = ['Local Time', 'Temperature (C)'])
+        self.data_df = pd.DataFrame(columns = ['Datetime', 'Temperature (C)'])
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.master)
         self.canvas_widget = self.canvas.get_tk_widget()
@@ -106,11 +108,10 @@ class StripChart:
                             print("Error Reading Temperature From Serial Port!")
                 finally :
                     val = self.current_val
-                current_time = dt.datetime.now().strftime('%H:%M:%S.%f')
+                current_time = dt.datetime.now()
             yield t, val, current_time
 
     def run(self, data):
-        # time.sleep(1)
         t, y, current_time = data
         if t > -1 :
             self.x_data.append(t)
@@ -119,7 +120,7 @@ class StripChart:
                 self.ax.set_xlim(t - self.xlim, t)
             self.line.set_data(self.x_data, self.y_data)
 
-            new_df = pd.DataFrame({'Local_Time': [current_time], 'Temperature': [y]})
+            new_df = pd.DataFrame({'Datetime': [current_time], 'Temperature': [y]})
             if self.data_df.empty :
                 self.data_df = new_df
             else:
@@ -145,9 +146,14 @@ class StripChart:
 
     def export_csv(self) :
         if not self.data_df.empty :
-            file_path = 'temperature_data.csv'
-            self.data_df.to_csv(file_path, index = False)
-            print(f"Data exported to {file_path}")
+            csv_df = self.data_df.copy()
+            csv_df['Temperature'] = csv_df.groupby('Datetime')['Temperature'].transform('mean')
+            csv_df['Datetime'] = csv_df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            csv_path = f'''N76E003_{csv_df['Datetime'].iloc[0].replace(' ', '_').replace('-', '_').replace(':', '_')}.csv'''
+            csv_df.to_csv(csv_path, index = False)
+
+            print(f"Data Exported to {csv_path}\n\nData Preview:\n")
+            display(csv_df.head(2))
 
 class App :
     def __init__(self) :
@@ -158,6 +164,8 @@ class App :
         )
         self.root.resizable(False, False)
         self.root.title("Temperature Strip-Chart")
+        # Bind Close Function to Window Close Event
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
 
         self.conn = None  # # Initialize Serial Connection to None
 
@@ -208,15 +216,15 @@ class App :
         self.bytesize_combobox.set('EIGHTBITS')
 
         self.open_button = tk.Button(
-            self.serial_frame, text = "Open", command = self.open_serial, bg = 'lightblue'
+            self.serial_frame, text = "Open", command = self.open_serial, bg = 'lightblue',
         )
-        self.send_button = tk.Button(
-            self.serial_frame,
-            text = "Send N76E003(C)", command = lambda : self.send_serial(
-                f'{int(self.strip_chart.current_val*(10**4))}'
-            ),
-            bg = 'lightblue'
-        )
+        # self.send_button = tk.Button(
+        #     self.serial_frame,
+        #     text = "Send N76E003(C)", command = lambda : self.send_serial(
+        #         f'{int(self.strip_chart.current_val*(10**4))}'
+        #     ),
+        #     bg = 'lightblue'
+        # )
 
         # Position Serial Frame Widgets
         self.port_label.grid(
@@ -275,15 +283,16 @@ class App :
         )
 
         self.open_button.grid(
-            row = 5, column = 0,
-            rowspan = 1, columnspan = 1,
-            padx = 10, pady = 10
-        )
-        self.send_button.grid(
             row = 5, column = 1,
             rowspan = 1, columnspan = 1,
-            padx = 10, pady = 10
+            padx = 10, pady = 10,
+            sticky = 'e'
         )
+        # self.send_button.grid(
+        #     row = 5, column = 1,
+        #     rowspan = 1, columnspan = 1,
+        #     padx = 10, pady = 10
+        # )
 
         ########################
         ### StripChart Frame ###
@@ -316,6 +325,13 @@ class App :
         self.paned_window.add(self.strip_chart_frame)
 
         self.root.mainloop()
+
+    def close(self) :
+        self.strip_chart.export_csv()
+        if self.conn is not None :
+            self.conn.close()
+        self.root.destroy()
+        sys.exit()
 
     def open_serial(self):
         if self.conn is None :  # Check if Serial Connection Already Established
